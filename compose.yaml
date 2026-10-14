@@ -1,0 +1,42 @@
+x-backend: &backend
+  build: ./backend
+  env_file: ./backend/.env
+  environment:
+    DATABASE_URL: sqlite+aiosqlite:////data/app.db
+    STORAGE_DIR: /data
+    TASK_BACKEND: database
+  volumes:
+    - artifacts:/data
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
+services:
+  migrate:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////data/app.db
+      STORAGE_DIR: /data
+    volumes:
+      - artifacts:/data
+    command: alembic upgrade head
+  api:
+    <<: *backend
+    ports:
+      - '127.0.0.1:8000:8000'
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+  frequent-worker:
+    <<: *backend
+    command: python -m app.workers.frequent
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+  worker:
+    <<: *backend
+    command: python -m app.workers.local
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+volumes:
+  artifacts:

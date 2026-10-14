@@ -1,0 +1,53 @@
+{
+  "passed": true,
+  "isolated_storage": true,
+  "real_embedding": true,
+  "embedding_model": "qwen3.7-text-embedding-flash",
+  "checks": [
+    {
+      "format": ".md",
+      "status": "ready",
+      "chunks": 1,
+      "expected_document_rank": 1,
+      "vector_retrieval_verified": true,
+      "diagnostics": {
+        "requested_mode": "hybrid",
+        "warnings": [],
+        "vector_candidates": 1,
+        "keyword_candidates": 1,
+        "min_similarity": 0.25,
+        "score_type": "rrf",
+        "profiles": 1,
+        "effective_mode": "hybrid",
+        "returned": 1,
+        "elapsed_ms": 384.9
+      }
+    },
+    {
+      "format": ".txt",
+      "status": "ready",
+      "chunks": 1,
+      "expected_document_rank": 1,
+      "vector_retrieval_verified": true,
+      "diagnostics": {
+        "requested_mode": "hybrid",
+        "warnings": [],
+        "vector_candidates": 2,
+        "keyword_candidates": 1,
+        "min_similarity": 0.25,
+        "score_type": "rrf",
+        "profiles": 1,
+        "effective_mode": "hybrid",
+        "returned": 2,
+        "elapsed_ms": 205.4
+      }
+    }
+  ],
+  "agent": {
+    "status": "completed",
+    "has_citations": true,
+    "has_source_reference": true,
+    "policy_answer_supported": true
+  },
+  "elapsed_seconds": 13.77
+}

@@ -1,0 +1,233 @@
+{
+  "llm_model": "qwen3.7-flash",
+  "embedding_model": "qwen3.7-text-embedding-flash",
+  "isolation": "temporary migrated SQLite database; existing application data unchanged",
+  "checks": [
+    {
+      "name": "chat_http_1",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "chat_sse_1",
+      "passed": true,
+      "evidence": {
+        "answer_length": 40
+      }
+    },
+    {
+      "name": "message_enqueued_1",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "worker_completed_1",
+      "passed": true,
+      "evidence": {
+        "status": "completed",
+        "attempts": 1,
+        "group_id": "025fd93b-f130-4546-9300-4ba5d8855582",
+        "error_code": ""
+      }
+    },
+    {
+      "name": "below_threshold_1",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "chat_http_2",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "chat_sse_2",
+      "passed": true,
+      "evidence": {
+        "answer_length": 35
+      }
+    },
+    {
+      "name": "message_enqueued_2",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "worker_completed_2",
+      "passed": true,
+      "evidence": {
+        "status": "completed",
+        "attempts": 1,
+        "group_id": "025fd93b-f130-4546-9300-4ba5d8855582",
+        "error_code": ""
+      }
+    },
+    {
+      "name": "below_threshold_2",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "chat_http_3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "chat_sse_3",
+      "passed": true,
+      "evidence": {
+        "answer_length": 237
+      }
+    },
+    {
+      "name": "message_enqueued_3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "worker_completed_3",
+      "passed": true,
+      "evidence": {
+        "status": "completed",
+        "attempts": 1,
+        "group_id": "025fd93b-f130-4546-9300-4ba5d8855582",
+        "error_code": ""
+      }
+    },
+    {
+      "name": "three_paraphrases_one_group",
+      "passed": true,
+      "evidence": [
+        {
+          "id": "025fd93b-f130-4546-9300-4ba5d8855582",
+          "question": "标准大气压下水的沸点是多少？",
+          "count": 3,
+          "last_asked_at": "2026-10-12T04:40:30.512694+00:00"
+        }
+      ]
+    },
+    {
+      "name": "cross_user_isolation",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "resource_scope_empty",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "resource_owner_revalidated",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "chat_http_4",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "chat_sse_4",
+      "passed": true,
+      "evidence": {
+        "answer_length": 28
+      }
+    },
+    {
+      "name": "clicked_question_requery",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "message_idempotent",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "chat_http_5",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "chat_sse_5",
+      "passed": true,
+      "evidence": {
+        "answer_length": 25
+      }
+    },
+    {
+      "name": "different_metric_new_group",
+      "passed": false,
+      "evidence": {
+        "status": "skipped",
+        "attempts": 1,
+        "group_id": null,
+        "error_code": ""
+      }
+    }
+  ],
+  "chats": [
+    {
+      "question": "标准大气压下水的沸点是多少？",
+      "conversation_id": "4c1d4068-3958-4b24-b1c2-86ea22b53bbc",
+      "status": "completed",
+      "event_types": [
+        "chunk",
+        "done",
+        "run_started",
+        "usage"
+      ],
+      "answer_length": 40
+    },
+    {
+      "question": "水在一个标准大气压下多少摄氏度会沸腾？",
+      "conversation_id": "9fe95593-68b5-40b8-9cfd-1650ce297816",
+      "status": "completed",
+      "event_types": [
+        "chunk",
+        "done",
+        "run_started",
+        "usage"
+      ],
+      "answer_length": 35
+    },
+    {
+      "question": "请问一个标准大气压时，水的沸腾温度是多少摄氏度？",
+      "conversation_id": "b2c01447-80a0-4ba8-b428-24317d599ffc",
+      "status": "completed",
+      "event_types": [
+        "chunk",
+        "done",
+        "run_started",
+        "usage"
+      ],
+      "answer_length": 237
+    },
+    {
+      "question": "标准大气压下水的沸点是多少？",
+      "conversation_id": "f5acb823-e55c-4475-a9e3-1dbcd3be4a86",
+      "status": "completed",
+      "event_types": [
+        "chunk",
+        "done",
+        "run_started",
+        "usage"
+      ],
+      "answer_length": 28
+    },
+    {
+      "question": "标准大气压下水的凝固点是多少？",
+      "conversation_id": "2b297fa1-e03f-4746-a890-efacfebbaa35",
+      "status": "completed",
+      "event_types": [
+        "chunk",
+        "done",
+        "run_started",
+        "usage"
+      ],
+      "answer_length": 25
+    }
+  ],
+  "status": "failed",
+  "error_code": "AssertionError"
+}

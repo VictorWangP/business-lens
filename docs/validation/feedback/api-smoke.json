@@ -1,0 +1,8 @@
+{
+  "health": 200,
+  "admin_role": "feedback_admin",
+  "feedback_list": 200,
+  "feedback_total": 0,
+  "schema": "0008_answer_feedback",
+  "note": "真实本地服务只读校验，未新增验收反馈。"
+}
