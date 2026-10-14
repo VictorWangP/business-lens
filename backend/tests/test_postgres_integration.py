@@ -77,9 +77,9 @@ async def test_pgvector_chinese_fusion_retriever(monkeypatch):
             monkeypatch.setattr(EmbeddingProvider,'for_user',classmethod(for_user))
             monkeypatch.setattr(EmbeddingProvider,'embed',embed)
             monkeypatch.setattr('app.retrieval.retriever.AsyncSessionLocal',sessions)
-            result=await KnowledgeRetriever(uid,[kid]).aretrieve('华东折扣')
-            assert result[0].node.node_id=='chunk1'
-            assert await KnowledgeRetriever('other',[kid]).aretrieve('华东折扣') == []
+            result=await KnowledgeRetriever(uid,[kid]).ainvoke('华东折扣')
+            assert result[0].id=='chunk1'
+            assert await KnowledgeRetriever('other',[kid]).ainvoke('华东折扣') == []
         finally:
             await engine.dispose()
             await admin.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))

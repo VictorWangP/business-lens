@@ -115,10 +115,10 @@ async def ingest(job_id: str) -> None:
             doc.status, doc.progress = 'indexing', 60
             await db.commit()
         phase = '嵌入'
-        vectors = await provider.embed([n.text for n in nodes])
+        vectors = await provider.embed([n.page_content for n in nodes])
         phase = '索引写入'
         if settings.DATABASE_URL.startswith('sqlite'):
-            await write_vectors([{'id':n.node_id,'user_id':user_id,'kb_id':kb_id,'doc_id':doc_id,'version':version} for n in nodes], vectors, provider.profile)
+            await write_vectors([{'id':n.id,'user_id':user_id,'kb_id':kb_id,'doc_id':doc_id,'version':version} for n in nodes], vectors, provider.profile)
         async with AsyncSessionLocal() as db:
             doc = await db.scalar(select(Document).where(Document.id == doc_id).with_for_update())
             job = await db.scalar(select(IngestionJob).where(IngestionJob.id == job_id).with_for_update())
@@ -129,10 +129,10 @@ async def ingest(job_id: str) -> None:
             await db.execute(delete(DocumentChunk).where(DocumentChunk.doc_id == doc_id, DocumentChunk.version == version))
             for node, vector in zip(nodes, vectors, strict=True):
                 metadata = {**node.metadata, 'filename': filename, 'embedding_dimension': len(vector)}
-                db.add(DocumentChunk(id=node.node_id, user_id=user_id, kb_id=kb_id, doc_id=doc_id,
-                                     version=version, chunk_index=node.metadata['chunk_index'], content=node.text,
+                db.add(DocumentChunk(id=node.id, user_id=user_id, kb_id=kb_id, doc_id=doc_id,
+                                     version=version, chunk_index=node.metadata['chunk_index'], content=node.page_content,
                                      meta=metadata, embedding_profile=provider.profile, embedding=vector,
-                                     keywords=' '.join(jieba.cut_for_search(node.text))))
+                                     keywords=' '.join(jieba.cut_for_search(node.page_content))))
             job.status, job.artifact_path, job.error = 'staged', artifact, ''
             doc.status, doc.progress = 'staged', 90
             await db.flush()

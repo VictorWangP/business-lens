@@ -339,11 +339,11 @@ async def search_base(kb_id: str, payload: RetrievalProbe, current_user: User = 
     from app.retrieval.retriever import KnowledgeRetriever
     retriever = KnowledgeRetriever(current_user.id, [kb_id], payload.top_k, mode=payload.mode, min_similarity=payload.min_similarity)
     try:
-        nodes = await retriever.aretrieve(payload.query)
+        nodes = await retriever.ainvoke(payload.query)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
-    return {'items': [dict(chunk_id=n.node.node_id, content=n.node.text, score=n.score,
-        metadata=n.node.metadata) for n in nodes], 'diagnostics': retriever.diagnostics}
+    return {'items': [dict(chunk_id=n.id, content=n.page_content, score=n.metadata['score'],
+        metadata=n.metadata) for n in nodes], 'diagnostics': retriever.diagnostics}
 
 
 @router.post('/bases/{kb_id}/repair')

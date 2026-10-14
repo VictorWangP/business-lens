@@ -35,16 +35,15 @@ async def recover_expired_agent_runs():
             result = await db.execute(update(AgentRun).where(
                 AgentRun.id == run.id, AgentRun.status == run.status,
                 or_(AgentRun.lease_expires_at.is_(None), AgentRun.lease_expires_at < now)
-            ).values(status='cancelled' if cancelled else 'failed',
-                     error='用户停止' if cancelled else '执行进程中断，请重新发起任务',
-                     finished_at=now, lease_expires_at=None))
+            ).values(status='cancelled' if cancelled else 'queued',
+                     error='用户停止' if cancelled else '',
+                     finished_at=now if cancelled else None, lease_expires_at=None))
             if result.rowcount == 1:
                 recovered.append((run.id, cancelled))
         await db.commit()
     for run_id, cancelled in recovered:
-        if not cancelled:
-            await persist_run_event(run_id, {'type': 'error', 'message': '执行进程中断，请重新发起任务'})
-        await persist_run_event(run_id, {'type': 'done', 'status': 'cancelled' if cancelled else 'failed'})
+        if cancelled:
+            await persist_run_event(run_id, {'type': 'RUN_ERROR', 'code': 'CANCELLED', 'message': '用户已停止执行'})
 
 
 async def pending_agent_runs(limit: int):

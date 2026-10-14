@@ -2,8 +2,9 @@ import asyncio
 import time
 import jieba
 from sqlalchemy import select, func, text, bindparam
-from llama_index.core.retrievers import BaseRetriever
-from llama_index.core.schema import TextNode, NodeWithScore, QueryBundle
+from langchain_core.retrievers import BaseRetriever
+from pydantic import Field
+from langchain_core.documents import Document as RetrievedDocument
 from app.database import AsyncSessionLocal
 from app.config import settings
 from app.models.platform import DocumentChunk
@@ -15,18 +16,22 @@ from app.infrastructure.vector_index import index
 
 class KnowledgeRetriever(BaseRetriever):
     """Scoped hybrid retrieval; model failures explicitly degrade to lexical search."""
+    user_id: str
+    kb_ids: list[str]
+    top_k: int = Field(default=6, ge=1, le=12)
+    mode: str = 'hybrid'
+    min_similarity: float = settings.RETRIEVAL_MIN_SIMILARITY
+    diagnostics: dict = Field(default_factory=dict)
+
     def __init__(self, user_id: str, kb_ids: list[str], top_k: int = 6,
                  mode: str = 'hybrid', min_similarity: float | None = None):
-        super().__init__()
         if mode not in {'hybrid', 'keyword', 'vector'}:
             raise ValueError('无效检索模式')
-        self.user_id, self.kb_ids, self.top_k = user_id, kb_ids, min(max(top_k, 1), 12)
-        self.mode = mode
-        self.min_similarity = settings.RETRIEVAL_MIN_SIMILARITY if min_similarity is None else min_similarity
-        self.diagnostics = {}
+        super().__init__(user_id=user_id, kb_ids=kb_ids, top_k=min(max(top_k, 1), 12),
+            mode=mode, min_similarity=settings.RETRIEVAL_MIN_SIMILARITY if min_similarity is None else min_similarity)
 
-    def _retrieve(self, query_bundle: QueryBundle):
-        raise RuntimeError('请使用 aretrieve，避免在事件循环中同步检索')
+    def _get_relevant_documents(self, query, *, run_manager):
+        raise RuntimeError('请使用 ainvoke，避免在事件循环中同步检索')
 
     async def lexical(self, db, base, query):
         tokens = list(dict.fromkeys(t for t in jieba.cut_for_search(query) if any(c.isalnum() for c in t)))[:32]
@@ -69,11 +74,11 @@ class KnowledgeRetriever(BaseRetriever):
         rows = {r.id: r for r in (await db.scalars(scoped.where(DocumentChunk.id.in_(similarities)))).all()}
         return [rows[key] for key in similarities if key in rows], similarities
 
-    async def _aretrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
+    async def _aget_relevant_documents(self, query: str, *, run_manager) -> list[RetrievedDocument]:
         started = time.monotonic()
         self.diagnostics = {'requested_mode': self.mode, 'warnings': [], 'vector_candidates': 0,
             'keyword_candidates': 0, 'min_similarity': self.min_similarity, 'score_type': 'rrf', 'profiles': 0}
-        if not self.kb_ids or not query_bundle.query_str.strip():
+        if not self.kb_ids or not query.strip():
             return []
         async with AsyncSessionLocal() as db:
             base = select(DocumentChunk).join(Document, Document.id == DocumentChunk.doc_id).where(
@@ -81,11 +86,11 @@ class KnowledgeRetriever(BaseRetriever):
                 DocumentChunk.kb_id.in_(self.kb_ids), DocumentChunk.version == Document.active_version)
             profiles = list((await db.scalars(base.with_only_columns(DocumentChunk.embedding_profile).distinct())).all())
             self.diagnostics['profiles'] = len(profiles)
-            lexical_rows = await self.lexical(db, base, query_bundle.query_str) if self.mode != 'vector' else []
+            lexical_rows = await self.lexical(db, base, query) if self.mode != 'vector' else []
             rankings, similarities = [], {}
             for profile in profiles if self.mode != 'keyword' else []:
                 try:
-                    rows, values = await self.semantic(db, base, profile, query_bundle.query_str)
+                    rows, values = await self.semantic(db, base, profile, query)
                     rankings.append(rows)
                     similarities.update(values)
                 except Exception as exc:
@@ -104,13 +109,13 @@ class KnowledgeRetriever(BaseRetriever):
                     candidates[row.id] = row
                     sources.setdefault(row.id, []).append(kind)
             chosen = sorted(scores, key=scores.get, reverse=True)[:40]
-            nodes = [NodeWithScore(node=TextNode(id_=key, text=candidates[key].content,
+            nodes = [RetrievedDocument(id=key, page_content=candidates[key].content,
                 metadata={**candidates[key].meta, 'doc_id': candidates[key].doc_id,
                     'kb_id': candidates[key].kb_id, 'version': candidates[key].version,
                     'chunk_index': candidates[key].chunk_index, 'retrieval_sources': sources[key],
-                    'vector_similarity': similarities.get(key)}), score=scores[key]) for key in chosen]
+                    'vector_similarity': similarities.get(key), 'score': scores[key]}) for key in chosen]
             try:
-                result = await rerank(query_bundle.query_str, nodes, self.top_k)
+                result = await rerank(query, nodes, self.top_k)
                 if settings.RERANK_API_URL and nodes:
                     self.diagnostics['score_type'] = 'reranker'
             except Exception as exc:

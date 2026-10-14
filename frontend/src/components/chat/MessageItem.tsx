@@ -1,3 +1,4 @@
+import {BusinessAnswerPart} from './BusinessAnswerPart';
 import { FeedbackButton } from '../feedback/FeedbackButton';
 import React, { useState } from 'react';
 import {
@@ -17,7 +18,7 @@ import { useBookmarks } from '../../context/BookmarkContext';
 import { apiRequest, downloadDocument } from '../../services/api';
 import { toast } from 'sonner';
 import { WorkingIndicator } from './WorkingIndicator';
-import { MessagePrimitive, ActionBarPrimitive, ComposerPrimitive, ThreadPrimitive, useAuiState } from '@assistant-ui/react';
+import { MessagePrimitive, ActionBarPrimitive, ComposerPrimitive, ThreadPrimitive, useAui, useAuiState } from '@assistant-ui/react';
 import { Button } from '../ui/button';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
@@ -26,7 +27,7 @@ import { MarkdownText } from './MarkdownContent';
 const analysisActionLabels: Record<string, string> = {
   search_knowledge: '检索知识库', read_document_section: '读取文档内容',
   get_business_schema: '读取业务字段', query_metrics: '查询业务指标',
-  execute_readonly_sql: '查询业务数据', list_available_resources: '确认可用资源',
+  execute_readonly_sql: '查询业务数据', ask_clarification:'确认业务条件', list_available_resources: '确认可用资源',
 };
 const runStatusLabels: Record<string, string> = {
   queued: '排队中', running: '运行中', cancel_requested: '正在停止', completed: '完成',
@@ -39,6 +40,7 @@ interface MessageItemProps {
 }
 
 export const MessageItem: React.FC<MessageItemProps> = ({ message, isWorking = false }) => {
+  const aui=useAui();
   const { configs } = useConfig();
   const { isBookmarked, toggleBookmark } = useBookmarks();
   const copied = useAuiState(s => s.message.isCopied);
@@ -46,7 +48,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, isWorking = f
   const isSpeaking = useAuiState(s => s.message.speech != null);
   const enableTTS = configs?.voice_tts?.is_enabled ?? false;
   const [activeCitation, setActiveCitation] = useState<CitationItem | null>(null);
-  const [runDetails, setRunDetails] = useState<any>(null);
 
   const isUser = message.role === 'user';
   const bookmarked = isBookmarked(message.content);
@@ -87,7 +88,12 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, isWorking = f
                 <p className="text-xs text-white/80">修改后作为新问题发送，保留原有对话。</p>
                 <div className="flex justify-end gap-2">
                   <ComposerPrimitive.Cancel asChild><Button type="button" variant="secondary" size="sm">取消</Button></ComposerPrimitive.Cancel>
-                  <ComposerPrimitive.Send asChild><Button size="sm" variant="secondary">保存并发送</Button></ComposerPrimitive.Send>
+                  <Button type="button" size="sm" variant="secondary" onClick={()=>{
+                    const text=aui.message().composer().getState().text.trim();
+                    if (!text) return;
+                    aui.message().composer().cancel();
+                    aui.thread().append({role:'user',content:[{type:'text',text}]});
+                  }}>保存并发送</Button>
                 </div>
               </ComposerPrimitive.Root>
             ) : isUser ? (
@@ -95,9 +101,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, isWorking = f
                 {message.content}
               </div>
             ) : (
-              <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+              <MessagePrimitive.Parts components={{ Text: MarkdownText, data:{by_name:{"agui-activity/business-answer":BusinessAnswerPart},Fallback:()=>null}, tools:{Fallback:()=>null} }} />
             )}
 
+            {!isUser && <MessagePrimitive.Error><p role="alert" className="mt-2 text-destructive">执行未完成，请检查模型或数据配置后重试。</p></MessagePrimitive.Error>}
             {!isUser && isWorking && <WorkingIndicator message={message} />}
             {!isUser && !isWorking && (executionEvents.length > 0 || message.tool_calls?.run_id || message.tool_calls?.query_results?.length || runStatus) && (
               <details className="mt-2 text-xs text-muted-foreground">
@@ -111,21 +118,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, isWorking = f
                   ))}
                 </ol>}
                 {runStatus && <p className="mt-2">执行状态：{runStatusLabels[runStatus] || runStatus}</p>}
-                {message.tool_calls?.run_id && <details className="mt-2" onToggle={event => {
-                  if (event.currentTarget.open && !runDetails) {
-                    apiRequest(`/runs/${message.tool_calls?.run_id}`).then(setRunDetails).catch(error => setRunDetails({error: error.message}));
-                  }
-                }}>
-                  <summary className="cursor-pointer text-primary">查看执行记录</summary>
-                  <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap">{runDetails ? JSON.stringify(runDetails, null, 2) : '正在加载…'}</pre>
-                </details>}
-                {message.tool_calls?.query_results?.map(query => <details key={query.query_id} className="mt-3">
-                  <summary className="cursor-pointer text-primary">查询 {query.citation_id || query.query_id.slice(0, 8)} · {query.source_name} · {query.rows.length} 行{query.truncated ? '（已截断）' : ''}</summary>
-                  <p className="mt-2">查询时间：{query.retrieved_at}</p>
-                  <pre className="mt-1 overflow-auto whitespace-pre-wrap">{query.sql}</pre>
-                  {query.parameters && Object.keys(query.parameters).length > 0 && <pre className="overflow-auto whitespace-pre-wrap">{JSON.stringify(query.parameters, null, 2)}</pre>}
-                  <pre className="max-h-60 overflow-auto">{JSON.stringify(query.rows, null, 2)}</pre>
-                </details>)}
               </details>
             )}
             {/* 知识库引用来源卡片 */}

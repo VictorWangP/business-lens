@@ -1,4 +1,4 @@
-"""Compatibility facade. All retrieval is implemented by a LlamaIndex retriever."""
+"""Citation projection at the authorized retrieval boundary."""
 from app.retrieval.retriever import KnowledgeRetriever
 from app.schemas.chat import CitationItem
 
@@ -11,11 +11,11 @@ class RAGService:
     @staticmethod
     async def query_knowledge_bases(user_id, kb_ids, query, top_k=6):
         retriever = KnowledgeRetriever(user_id, kb_ids, top_k)
-        nodes = await retriever.aretrieve(query)
-        return RetrievalCitations([CitationItem(id=n.node.node_id, chunk_id=n.node.node_id,
-                            doc_id=n.node.metadata['doc_id'], doc_name=n.node.metadata['filename'],
-                            chunk_index=n.node.metadata['chunk_index'], content=n.node.text,
-                            score=n.score, pages=n.node.metadata.get('pages', []),
-                            headings=n.node.metadata.get('headings', []), version=n.node.metadata['version'],
+        nodes = await retriever.ainvoke(query)
+        return RetrievalCitations([CitationItem(id=n.id, chunk_id=n.id,
+                            doc_id=n.metadata['doc_id'], doc_name=n.metadata['filename'],
+                            chunk_index=n.metadata['chunk_index'], content=n.page_content,
+                            score=n.metadata['score'], pages=n.metadata.get('pages', []),
+                            headings=n.metadata.get('headings', []), version=n.metadata['version'],
                             retrieval_warning='；'.join(retriever.diagnostics.get('warnings', []))) for n in nodes],
                             retriever.diagnostics.get('warnings', []))

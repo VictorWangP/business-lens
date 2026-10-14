@@ -1,7 +1,15 @@
-from llama_index.core.utils import get_tokenizer
+"""One explicit tokenizer for chunking and model budgets."""
+from functools import lru_cache
+import tiktoken
 
-
+@lru_cache(maxsize=1)
 def encoding():
-    # Pinned llama-index-core bundles cl100k_base; initialize through its offline cache.
-    tokenizer = get_tokenizer()
-    return tokenizer.func.__self__
+    return tiktoken.get_encoding('cl100k_base')
+
+
+def count_message_tokens(messages):
+    """Count provider-visible content, excluding LangChain tool artifacts."""
+    import json
+    from langchain_core.messages import convert_to_openai_messages
+    wire = convert_to_openai_messages(messages)
+    return len(encoding().encode(json.dumps(wire, ensure_ascii=False))) + 3 * len(messages)

@@ -22,6 +22,6 @@ async def run_online():
     await engine.dispose()
 
 if context.is_offline_mode():
-    raise RuntimeError('初始迁移需检查已有表，请使用在线迁移')
+    raise RuntimeError('请使用在线迁移初始化新版数据库')
 else:
     asyncio.run(run_online())

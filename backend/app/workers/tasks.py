@@ -31,32 +31,11 @@ async def pending_jobs():
         )).limit(100))).all())
 
 async def pending_agent_runs():
-    from app.application.chat import persist_run_event
+    from app.workers.local import recover_expired_agent_runs
+    await recover_expired_agent_runs()
     async with AsyncSessionLocal() as db:
-        now = datetime.utcnow()
-        expired = (await db.execute(select(AgentRun.id, AgentRun.status).where(
-            AgentRun.status.in_(['running', 'cancel_requested']),
-            or_(AgentRun.lease_expires_at.is_(None), AgentRun.lease_expires_at < now)
-        ))).all()
-        recovered = []
-        for run in expired:
-            cancelled = run.status == 'cancel_requested'
-            result = await db.execute(update(AgentRun).where(
-                AgentRun.id == run.id, AgentRun.status == run.status,
-                or_(AgentRun.lease_expires_at.is_(None), AgentRun.lease_expires_at < now)
-            ).values(status='cancelled' if cancelled else 'failed',
-                     error='用户停止' if cancelled else '执行进程中断，请重新发起任务',
-                     finished_at=now, lease_expires_at=None))
-            if result.rowcount == 1:
-                recovered.append((run.id, cancelled))
-        await db.commit()
-        queued = list((await db.scalars(select(AgentRun.id).where(AgentRun.status == 'queued')
+        return list((await db.scalars(select(AgentRun.id).where(AgentRun.status == 'queued')
             .order_by(AgentRun.created_at).limit(100))).all())
-    for run_id, cancelled in recovered:
-        if not cancelled:
-            await persist_run_event(run_id, {'type': 'error', 'message': '执行进程中断，请重新发起任务'})
-        await persist_run_event(run_id, {'type': 'done', 'status': 'cancelled' if cancelled else 'failed'})
-    return queued
 
 @celery.task(name='rag.dispatch_pending')
 def dispatch_pending():

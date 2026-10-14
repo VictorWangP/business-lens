@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
     settings.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     async with engine.connect() as conn:
         version = await conn.scalar(text('SELECT version_num FROM alembic_version'))
-        if version != '0008_answer_feedback':
+        if version != '0001_langgraph':
             raise RuntimeError('请先执行 alembic upgrade head')
     yield
     await engine.dispose()

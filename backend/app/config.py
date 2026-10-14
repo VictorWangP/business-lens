@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     CREDENTIAL_KEY: str = ''
     ALGORITHM: str = 'HS256'
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
-    DATABASE_URL: str = f'sqlite+aiosqlite:///{BASE_DIR.parent}/storage/app.db'
-    STORAGE_DIR: Path = BASE_DIR.parent / 'storage'
+    DATABASE_URL: str = f'sqlite+aiosqlite:///{BASE_DIR.parent}/storage-v2/app.db'
+    STORAGE_DIR: Path = BASE_DIR.parent / 'storage-v2'
     STORAGE_BACKEND: str = 'local'
     S3_BUCKET: str = ''
     S3_ENDPOINT: str = ''
@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     AGENT_MAX_TOOL_CALLS: int = Field(default=16, ge=1, le=100)
     AGENT_TIMEOUT: int = 180
     AGENT_WORKER_CONCURRENCY: int = Field(default=5, ge=1, le=32)
+    AGENT_CONTEXT_TOKENS: int = Field(default=32768, ge=8192)
+    AGENT_SUMMARY_TRIGGER_TOKENS: int = Field(default=18000, ge=2000)
+    AGENT_SUMMARY_KEEP_TOKENS: int = Field(default=6000, ge=1000)
     AGENT_MAX_TOTAL_TOKENS: int = 64000
     SQL_TIMEOUT_MS: int = 15000
     SQL_MAX_ROWS: int = 200

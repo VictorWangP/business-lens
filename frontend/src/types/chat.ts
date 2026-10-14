@@ -40,6 +40,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   tool_calls?: {
+    presentation?: {answer:FinalAnswer; queries:any[];citations:CitationItem[]};
     metrics?: MetricCard[];
     chart?: ChartConfig;
     run_id?: string;
@@ -50,7 +51,7 @@ export interface Message {
     answer?: FinalAnswer;
   };
   citations?: CitationItem[];
-  execution_events?: {type: string; name?: string; message?: string}[];
+  execution_events?: {type: string; name?: string; tool_id?: string; message?: string}[];
   created_at: string;
 }
 

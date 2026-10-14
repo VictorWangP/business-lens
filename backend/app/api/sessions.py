@@ -154,7 +154,7 @@ async def delete_session(
 
     active_run = await db.scalar(select(AgentRun.id).where(
         AgentRun.conversation_id == session_id,
-        AgentRun.status.in_(['queued', 'running', 'cancel_requested'])).limit(1))
+        AgentRun.status.in_(['queued', 'running', 'cancel_requested', 'paused'])).limit(1))
     if active_run:
         raise HTTPException(status_code=409, detail="会话仍有 Agent 任务运行，请先停止任务后再删除")
 

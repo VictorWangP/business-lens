@@ -92,8 +92,8 @@ class AgentRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     __table_args__ = (Index('uq_agent_runs_active_conversation', 'conversation_id', unique=True,
-        sqlite_where=text("status IN ('queued','running','cancel_requested')"),
-        postgresql_where=text("status IN ('queued','running','cancel_requested')")),)
+        sqlite_where=text("status IN ('queued','running','cancel_requested','paused')"),
+        postgresql_where=text("status IN ('queued','running','cancel_requested','paused')")),)
 
 class RunEvent(Base):
     __tablename__ = 'run_events'

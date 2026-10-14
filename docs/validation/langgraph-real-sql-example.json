@@ -1,0 +1,96 @@
+{
+  "text": "## 1. 按月汇总订单销售额\n\n根据实际业务数据（验收订单），按月汇总的订单销售额如下：\n\n2026-01：0.30 元\n2026-02：100.00 元\n\n金额单位：元。该结果已按时间排序，前端可直接渲染为折线图展示趋势。",
+  "data": {
+    "answer": {
+      "version": 1,
+      "sections": [
+        {
+          "title": "按月汇总订单销售额",
+          "summary": "根据实际业务数据（验收订单），按月汇总的订单销售额如下：\n\n2026-01：0.30 元\n2026-02：100.00 元\n\n金额单位：元。该结果已按时间排序，前端可直接渲染为折线图展示趋势。",
+          "query_id": "Q634ad54fca3148f496f0f9d4c0f86587",
+          "show_table": true,
+          "code": null
+        }
+      ],
+      "suggestions": [
+        "按区域统计订单销售额",
+        "查看每月订单数量变化",
+        "分析高价值订单分布"
+      ]
+    },
+    "queries": [
+      {
+        "rows": [
+          {
+            "month": "2026-01-01T00:00:00",
+            "total_amount": "0.30"
+          },
+          {
+            "month": "2026-02-01T00:00:00",
+            "total_amount": "100.00"
+          }
+        ],
+        "truncated": false,
+        "sql": "SELECT * FROM (SELECT DATE_TRUNC('MONTH', order_date) AS month, SUM(amount) AS total_amount FROM \"main\".\"dataset\" GROUP BY 1 ORDER BY 1) AS business_result LIMIT 201",
+        "query_id": "634ad54f-ca31-48f4-96f0-f9d4c0f86587",
+        "citation_id": "Q634ad54fca3148f496f0f9d4c0f86587",
+        "source_id": "2a28089f-ac7d-40fe-aadf-c4828aa8323e",
+        "source_name": "验收订单",
+        "retrieved_at": "2026-10-14T04:36:51.393919+00:00",
+        "parameters": {},
+        "chart": {
+          "type": "line",
+          "title": "验收订单",
+          "x_key": "month",
+          "y_keys": [
+            "total_amount"
+          ],
+          "data": [
+            {
+              "month": "2026-01-01 00:00:00",
+              "total_amount": 0.3
+            },
+            {
+              "month": "2026-02-01 00:00:00",
+              "total_amount": 100.0
+            }
+          ]
+        },
+        "metrics": []
+      }
+    ],
+    "citations": [],
+    "operations": [
+      {
+        "type": "tool_start",
+        "name": "list_available_resources",
+        "tool_id": "call_89c0029cc87d4bacb2a85f77"
+      },
+      {
+        "type": "tool_end",
+        "name": "list_available_resources",
+        "tool_id": "call_89c0029cc87d4bacb2a85f77"
+      },
+      {
+        "type": "tool_start",
+        "name": "get_business_schema",
+        "tool_id": "call_e8e6e2e42cf241d7bc818ff2"
+      },
+      {
+        "type": "tool_end",
+        "name": "get_business_schema",
+        "tool_id": "call_e8e6e2e42cf241d7bc818ff2"
+      },
+      {
+        "type": "tool_start",
+        "name": "execute_readonly_sql",
+        "tool_id": "call_8bf3d9f019224131bc7d1f7e"
+      },
+      {
+        "type": "tool_end",
+        "name": "execute_readonly_sql",
+        "tool_id": "call_8bf3d9f019224131bc7d1f7e"
+      }
+    ]
+  }
+}

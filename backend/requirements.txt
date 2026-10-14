@@ -1,7 +1,7 @@
 # Direct dependencies pinned to the versions validated in this workspace.
 fastapi==0.143.0
 uvicorn[standard]==0.54.0
-sqlalchemy==2.1.4
+sqlalchemy[asyncio]==2.1.4
 aiosqlite==0.22.1
 pydantic==2.14.0
 pydantic-settings==2.15.0
@@ -11,9 +11,7 @@ pyjwt==2.15.1
 bcrypt==5.0.0
 sqlparse==0.6.0
 httpx==0.28.1
-llama-index-core==0.14.25
-llama-index-llms-openai-like==0.6.0
-docling==2.136.0
+docling[rapidocr]==2.136.0
 openai==2.54.0
 alembic==1.20.0
 sqlglot==30.22.0
@@ -29,3 +27,16 @@ chromadb==1.5.9
 openpyxl==3.1.5
 duckdb==1.5.6
 pyarrow==23.0.1
+langchain==1.4.5
+langgraph==1.2.15
+langchain-openai==1.7.1
+langchain-docling[rapidocr]==3.0.0
+langgraph-checkpoint-sqlite==3.1.2
+ag-ui-langgraph==0.0.47
+ag-ui-protocol==1.0.0
+tiktoken==0.12.0
+
+langchain-text-splitters==1.1.2
+
+# Docling 2.136 expects recognizer language constants removed in RapidOCR 3.10.
+rapidocr==3.9.1

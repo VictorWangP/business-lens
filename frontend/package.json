@@ -11,8 +11,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "mdast-util-from-markdown": "2.1.0",
+    "@ag-ui/client": "0.0.59",
     "@assistant-ui/react": "^0.15.25",
+    "@assistant-ui/react-ag-ui": "0.0.69",
     "@assistant-ui/react-markdown": "^0.14.19",
     "@radix-ui/react-alert-dialog": "^1.1.24",
     "@radix-ui/react-avatar": "^1.2.7",

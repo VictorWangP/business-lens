@@ -9,6 +9,7 @@ backend/venv/
 frontend/node_modules/
 frontend/dist/
 storage/
+storage-v2/
 
 # Local OS/editor files
 .DS_Store

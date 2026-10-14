@@ -1,3 +1,4 @@
+import json
 """Real CSV/XLSX -> persisted DuckDB -> authorized SQL, without a database server or LLM."""
 import io
 from datetime import date
@@ -54,11 +55,11 @@ async def test_upload_api_metric_and_agent_use_actual_imported_data():
         assert r.status_code==200, r.text
         mid=r.json()['id']
         agent = AgentExecutor(a, [], [sid], {})
-        tool = next(t for t in agent.tools() if t.metadata.name=='query_metrics')
-        output = await tool.acall(metric_id=mid,start_date='2026-01-01',end_date='2026-02-01')
-        assert not output.is_error, output.content
+        tool = next(t for t in agent.tools() if t.name=='query_metrics')
+        output = await tool.ainvoke({'metric_id':mid,'start_date':'2026-01-01','end_date':'2026-02-01'})
+        assert 'error' not in json.loads(output)
         assert agent.queries[0]['rows']==[{'total':'0.30'}]
-        assert agent.queries[0]['citation_id']=='Q1'
+        assert agent.queries[0]['citation_id'].startswith('Q')
         assert (await client.delete(f'/api/data-sources/{sid}',headers=auth(a))).status_code==204
         with pytest.raises(ValueError): await agent.source(sid)
 

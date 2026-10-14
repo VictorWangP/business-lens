@@ -75,7 +75,7 @@ async def test_batch_switches_all_documents_and_cleans_only_old_versions(provide
         async with AsyncSessionLocal() as db:
             assert {d.id:d.active_version for d in (await db.scalars(select(Document))).all()} == old
             assert (await db.get(IngestionJob, jobs[0].id)).status == 'staged'
-        assert await KnowledgeRetriever(uid, [kb]).aretrieve('华东折扣')
+        assert await KnowledgeRetriever(uid, [kb]).ainvoke('华东折扣')
         await ingest(jobs[1].id)
         async with AsyncSessionLocal() as db:
             assert (await db.get(KnowledgeBase, kb)).index_batch_id == ''
@@ -87,7 +87,7 @@ async def test_batch_switches_all_documents_and_cleans_only_old_versions(provide
             await maintain(job_id)
         old_profile = EmbeddingProvider({'base_url':'http://test/v1','model_id':'old','api_key':'test-secret'}).profile
         assert not index.ids(old_profile, 3, uid, kb, list(old.values()))
-        assert await KnowledgeRetriever(uid, [kb]).aretrieve('华东折扣')
+        assert await KnowledgeRetriever(uid, [kb]).ainvoke('华东折扣')
 
 
 @pytest.mark.asyncio
@@ -113,7 +113,7 @@ async def test_batch_failure_preserves_entire_old_index_and_releases_lock(provid
             assert {d.id:d.active_version for d in (await db.scalars(select(Document))).all()} == old
             assert set((await db.scalars(select(IngestionJob.status).where(IngestionJob.batch_id==response.json()['batch_id']))).all()) == {'failed'}
             assert await db.scalar(select(func.count()).select_from(DocumentChunk)) == len(docs)
-        assert await KnowledgeRetriever(uid, [kb]).aretrieve('华东折扣')
+        assert await KnowledgeRetriever(uid, [kb]).ainvoke('华东折扣')
 
 
 @pytest.mark.asyncio
@@ -136,7 +136,7 @@ async def test_repair_restores_missing_vectors_prunes_orphans_and_protects_infli
         assert result == {'checked_chunks':1,'restored_vectors':1,'removed_vectors':1}
         assert index.ids(profile,3,uid,kb,[pending_version]) == {'inflight'}
         assert index.ids(profile,3,other,kb,[stale]) == {'other-user'}
-        assert await KnowledgeRetriever(uid,[kb]).aretrieve('华东折扣')
+        assert await KnowledgeRetriever(uid,[kb]).ainvoke('华东折扣')
         assert (await client.post(f'/api/knowledge/bases/{kb}/repair',headers=auth(other))).status_code == 404
 
 

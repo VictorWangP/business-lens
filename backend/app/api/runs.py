@@ -37,9 +37,9 @@ async def cancel_run(run_id: str, user: User = Depends(get_current_user), db: As
     run = await db.scalar(select(AgentRun).where(AgentRun.id == run_id, AgentRun.user_id == user.id))
     if not run:
         raise HTTPException(404, '执行记录不存在')
-    if run.status == 'queued':
+    if run.status in {'queued', 'paused'}:
         result = await db.execute(update(AgentRun).where(
-            AgentRun.id == run_id, AgentRun.user_id == user.id, AgentRun.status == 'queued'
+            AgentRun.id == run_id, AgentRun.user_id == user.id, AgentRun.status.in_(['queued', 'paused'])
         ).values(status='cancelled', finished_at=datetime.utcnow()))
         cancelled = result.rowcount == 1
         if not cancelled:
@@ -48,7 +48,7 @@ async def cancel_run(run_id: str, user: User = Depends(get_current_user), db: As
             ).values(status='cancel_requested'))
         await db.commit()
         if cancelled:
-            await persist_run_event(run_id, {'type': 'done', 'status': 'cancelled'})
+            await persist_run_event(run_id, {'type': 'RUN_ERROR', 'code': 'CANCELLED', 'message': '用户已停止执行'})
     elif run.status == 'running':
         await db.execute(update(AgentRun).where(AgentRun.id == run_id, AgentRun.user_id == user.id,
             AgentRun.status == 'running').values(status='cancel_requested'))

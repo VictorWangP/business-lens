@@ -1,6 +1,6 @@
 import json
 import pytest
-from app.agents.answer import parse_answer, render_answer, history_text, AnswerValidationError
+from app.agents.answer import parse_answer, render_answer, AnswerValidationError
 
 QUERY = {'citation_id':'Q1','rows':[{'月份':'十月','收入':10}], 'truncated':False}
 
@@ -38,20 +38,16 @@ def test_unknown_chart_fields_are_rejected():
     with pytest.raises(AnswerValidationError):parse(chart={'data':[1,2]})
 
 
-def test_table_is_derived_from_evidence_with_numbering_escaping_and_truncation():
-    query={**QUERY,'rows':[{'月份':'十月|十一月\n<script>','收入':10}],'truncated':True}
+def test_numbered_prose_does_not_duplicate_exact_table_data():
     answer=parse({'title':'7. 收入','summary':'数据如下。','query_id':'Q1','show_table':True})
-    rendered=render_answer(answer,[query])
-    assert rendered.startswith('## 1. 收入')
-    assert '十月\\|十一月 &lt;script&gt;' in rendered
-    assert '10' in rendered and '已截断' in rendered
-    assert '查询结果为空' in render_answer(answer,[{**QUERY,'rows':[]}])
+    assert render_answer(answer)=='## 1. 收入\n\n数据如下。'
+    assert answer.sections[0].show_table and answer.sections[0].query_id=='Q1'
 
 
 def test_only_explicit_code_field_is_allowed_when_requested():
     payload={'sections':[{'title':'示例','summary':'按需求提供示例。','code':{'language':'python','content':'print(1)'}}], 'suggestions':[]}
     answer=parse_answer(json.dumps(payload),enabled=False,allow_code=True,queries=[],citations={})
-    assert '```python\nprint(1)\n```' in render_answer(answer,[])
+    assert '```python\nprint(1)\n```' in render_answer(answer)
 
 
 @pytest.mark.parametrize('suggestions',[[],['a'],['a','a','b'],['a','b',' ']])
@@ -59,10 +55,3 @@ def test_enabled_feature_requires_exactly_three_distinct_questions(suggestions):
     with pytest.raises(AnswerValidationError):
         parse_answer(json.dumps({'sections':[{'title':'结果','summary':'结果。'}],'suggestions':suggestions}),
                      enabled=True,allow_code=False,queries=[],citations={})
-
-
-def test_history_does_not_reintroduce_chart_code_but_keeps_business_markdown():
-    raw='## 收入\n\n**增长** [查询 Q1]\n\n```mermaid\nxychart-beta\n```\n\n继续分析。'
-    assert 'xychart' not in history_text(raw)
-    assert '**增长** [查询 Q1]' in history_text(raw)
-    assert history_text(raw,allow_code=True)==raw

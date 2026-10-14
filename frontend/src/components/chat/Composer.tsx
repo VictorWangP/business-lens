@@ -1,3 +1,4 @@
+import {useCancelPersistentRun} from './ChatRuntimeProvider';
 import React, { useState, useEffect } from 'react';
 import { ComposerPrimitive, useAui, useAuiState } from '@assistant-ui/react';
 import { ArrowUp, Mic, Square, Trash2, Zap, X, Bot } from 'lucide-react';
@@ -27,6 +28,7 @@ export const Composer: React.FC<ComposerProps> = ({
 }) => {
   const { configs } = useConfig();
   const { bookmarks, removeBookmark } = useBookmarks();
+  const cancelPersistentRun=useCancelPersistentRun();
   const composer = useAui().composer();
   useEffect(() => { composer.setText(''); }, [composerKey]);
   const isRecording = useAuiState(s => s.composer.dictation != null);
@@ -105,7 +107,7 @@ export const Composer: React.FC<ComposerProps> = ({
             {isRecording ? <ComposerPrimitive.StopDictation asChild><Button type="button" variant="destructive" size="icon" aria-label="停止录音"><Square /></Button></ComposerPrimitive.StopDictation>
               : <ComposerPrimitive.Dictate asChild><Button type="button" variant="ghost" size="icon" disabled={isLoading || sendDisabled} aria-label="语音输入"><Mic /></Button></ComposerPrimitive.Dictate>}
           </TooltipTrigger><TooltipContent>{isRecording ? '停止录音' : '语音输入'}</TooltipContent></Tooltip>}
-          {isLoading ? <ComposerPrimitive.Cancel asChild><Button type="button" size="icon" variant="destructive" aria-label="停止生成"><Square /></Button></ComposerPrimitive.Cancel>
+          {isLoading ? <ComposerPrimitive.Cancel asChild><Button type="button" size="icon" variant="destructive" aria-label="停止生成" onClick={cancelPersistentRun}><Square /></Button></ComposerPrimitive.Cancel>
             : <ComposerPrimitive.Send asChild><Button size="icon" disabled={sendDisabled} aria-label="发送问题"><ArrowUp /></Button></ComposerPrimitive.Send>}
         </div>
       </div>

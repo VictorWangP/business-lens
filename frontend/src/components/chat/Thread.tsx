@@ -1,7 +1,9 @@
 import React from 'react';
-import { ThreadPrimitive, SuggestionPrimitive } from '@assistant-ui/react';
+import {useAuiState} from '@assistant-ui/react';
+import {fromRuntimeMessage} from '../../lib/chat-runtime';
+import {InterruptPrompt} from './InterruptPrompt';
+import { ThreadPrimitive } from '@assistant-ui/react';
 import { Sparkles, ArrowRight, ArrowDown, PanelLeftOpen } from 'lucide-react';
-import { Message } from '../../types/chat';
 import { MessageItem } from './MessageItem';
 import { Composer } from './Composer';
 import { useConfig } from '../../context/ConfigContext';
@@ -10,8 +12,8 @@ import { Button } from '../ui/button';
 interface ThreadProps {
   kbIds?: string[];
   sourceIds?: string[];
-  messages: Message[];
-  isLoading: boolean;
+
+
   workspaceId?: string;
   workspaceVersion?: number;
   workspaceWarning?: string;
@@ -20,7 +22,7 @@ interface ThreadProps {
   onWorkspaceAction?: () => void;
   composerKey?: string;
   sendDisabled?: boolean;
-  suggestions: string[];
+
   threadListCollapsed?: boolean;
   onToggleThreadList?: () => void;
   selectedModel?: string;
@@ -28,20 +30,21 @@ interface ThreadProps {
 }
 
 export const Thread: React.FC<ThreadProps> = ({
-  messages,
   kbIds,
   sourceIds,
-  isLoading,
   sendDisabled,
   workspaceWarning, pendingQuestion, workspaceActionLabel, onWorkspaceAction,
   composerKey, workspaceId, workspaceVersion,
-  suggestions,
   threadListCollapsed = false,
   onToggleThreadList,
   selectedModel,
   onModelChange,
 }) => {
   const { configs } = useConfig();
+  const messages=useAuiState(s=>s.thread.messages);
+  const isLoading=useAuiState(s=>s.thread.isRunning);
+  const last=messages[messages.length-1];
+  const suggestions=last ? fromRuntimeMessage(last).tool_calls?.answer?.suggestions || [] : [];
   // 配置动态联动
   const enableWelcome = configs?.welcome_setting?.is_enabled ?? true;
   const greeting = configs?.welcome_setting?.greeting || '你好';
@@ -131,7 +134,7 @@ export const Thread: React.FC<ThreadProps> = ({
           // 消息流列表
           <div className="max-w-4xl mx-auto space-y-4">
             <ThreadPrimitive.Messages>{({ message }) => {
-              const original = message.metadata.custom.appMessage as Message;
+              const original = fromRuntimeMessage(message, workspaceId);
               return <MessageItem message={original} isWorking={message.status?.type === 'running'} />;
             }}</ThreadPrimitive.Messages>
 
@@ -143,15 +146,15 @@ export const Thread: React.FC<ThreadProps> = ({
                   <span>推荐延伸提问：</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <ThreadPrimitive.Suggestions>{() => <SuggestionPrimitive.Trigger send asChild>
+                  <>{suggestions.map(prompt => <ThreadPrimitive.Suggestion key={prompt} prompt={prompt} send asChild>
                     <Button
                       variant="outline"
                       className="h-auto py-1.5 px-3 rounded-full text-xs text-foreground/90 bg-background hover:bg-accent hover:text-primary border-border/80 shadow-sm transition-all hover:shadow hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-1.5 group"
                     >
-                      <span className="font-normal"><SuggestionPrimitive.Title /></span>
+                      <span className="font-normal">{prompt}</span>
                       <ArrowRight className="h-3 w-3 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                     </Button>
-                  </SuggestionPrimitive.Trigger>}</ThreadPrimitive.Suggestions>
+                  </ThreadPrimitive.Suggestion>)}</>
                 </div>
               </div>
             )}
@@ -162,6 +165,7 @@ export const Thread: React.FC<ThreadProps> = ({
       <ThreadPrimitive.ScrollToBottom asChild><Button variant="outline" size="icon" aria-label="回到最新回答" className="absolute bottom-40 right-6 rounded-full shadow-md"><ArrowDown /></Button></ThreadPrimitive.ScrollToBottom>
       </ThreadPrimitive.Viewport>
 
+      <InterruptPrompt />
       {/* 底部输入框 */}
       <Composer
         workspaceId={workspaceId}
