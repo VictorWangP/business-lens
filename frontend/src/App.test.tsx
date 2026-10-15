@@ -188,6 +188,26 @@ describe('official runtime durable recovery',()=>{
 });
 
 describe('stable thread lifecycle', () => {
+  it('renders and sends a new draft on HTTP origins without crypto.randomUUID', async () => {
+    const originalCrypto = globalThis.crypto;
+    const originalRequest = vi.mocked(apiRequest).getMockImplementation();
+    vi.stubGlobal('crypto', {getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto)});
+    vi.mocked(apiRequest).mockImplementation(async (path, ...args) =>
+      path === '/sessions' ? [] : originalRequest!(path, ...args));
+    try {
+      const user = userEvent.setup();
+      render(<AppContent />);
+      await waitFor(() => expect(screen.getByRole('button', {name:'发送问题'})).not.toBeDisabled());
+      await user.type(screen.getByRole('textbox', {name:'输入问题'}), '汇总销售');
+      await user.click(screen.getByRole('button', {name:'发送问题'}));
+      await waitFor(() => expect(requests).toHaveLength(1));
+      expect(JSON.parse(requests[0].options.body as string).threadId)
+        .toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    } finally {
+      vi.stubGlobal('crypto', originalCrypto);
+    }
+  });
+
   it('promotes a draft without reloading its history or losing the published answer', async () => {
     const original = vi.mocked(apiRequest).getMockImplementation();
     vi.mocked(apiRequest).mockImplementation(async (path, ...args) =>

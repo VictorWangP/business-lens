@@ -4,6 +4,7 @@ import type {DataSource} from '../components/data/DataSourcesPanel';
 import type {Conversation} from '../types/chat';
 import {apiRequest} from '../services/api';
 import {toast} from 'sonner';
+import {createUuid} from '../lib/uuid';
 
 // Session selection and workspace scope change together; keep their state in one place.
 export function useChatSession(userId: string | undefined, currentTab: string,
@@ -35,7 +36,7 @@ export function useChatSession(userId: string | undefined, currentTab: string,
   const [workspaceId, setWorkspaceId] = useState('');
   const [scopeReady, setScopeReady] = useState(false);
   const [scopeWarning, setScopeWarning] = useState('');
-  const [draftId, setDraftId] = useState(() => crypto.randomUUID());
+  const [draftId, setDraftId] = useState(() => createUuid());
   const [editRequest, setEditRequest] = useState<{id: string; sequence: number} | null>(null);
   const workspaceEpoch = React.useRef(0);
   const activeWorkspace = workspaces.find(w => w.id === workspaceId);
@@ -54,7 +55,7 @@ export function useChatSession(userId: string | undefined, currentTab: string,
     setConversations([]); setActiveSessionId(null);
     setDataSources([]); setWorkspaces([]); setWorkspaceId('');
      setScopeWarning(''); setEditRequest(null);
-    setCurrentTab('chat'); setDraftId(crypto.randomUUID());
+    setCurrentTab('chat'); setDraftId(createUuid());
     if (userId) {
       Promise.all([
         apiRequest<Conversation[]>('/sessions'),
@@ -110,7 +111,7 @@ export function useChatSession(userId: string | undefined, currentTab: string,
   };
   const startWorkspaceConversation = (id:string) => {
     setActiveSessionId(null);setWorkspaceId(id);setScopeWarning('');
-    setDraftId(crypto.randomUUID());setCurrentTab('chat');setDraftModel('');
+    setDraftId(createUuid());setCurrentTab('chat');setDraftModel('');
   };
 
   // A draft is bound to the workspace currently selected in the session list.
@@ -129,7 +130,7 @@ export function useChatSession(userId: string | undefined, currentTab: string,
         const next = filtered.find(conversation => conversation.workspace_id === workspaceId);
         setActiveSessionId(next?.id || null);
         if (next) setWorkspaceId(next.workspace_id || '');
-         setScopeWarning(''); setDraftId(crypto.randomUUID());
+         setScopeWarning(''); setDraftId(createUuid());
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '删除会话失败');
