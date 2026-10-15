@@ -3,6 +3,7 @@ name: businesslens
 x-backend: &backend
   image: businesslens-backend:${IMAGE_TAG:-local}
   build: ./backend
+  platform: ${DOCKER_PLATFORM:-linux/amd64}
   env_file: ./deploy/.env
   environment:
     DATABASE_URL: sqlite+aiosqlite:////data/app.db
@@ -51,6 +52,7 @@ services:
   web:
     image: businesslens-web:${IMAGE_TAG:-local}
     build: ./frontend
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
     restart: unless-stopped
     init: true
     ports:

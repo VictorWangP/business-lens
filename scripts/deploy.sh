@@ -9,7 +9,7 @@ if [[ "$ACTION" == init ]]; then
   exec python3 "$ROOT/scripts/init_deploy.py"
 fi
 if [[ "$ACTION" == help ]]; then
-  echo 'Usage: scripts/deploy.sh {init|build|up|backup|restore ARCHIVE|status|logs|down}'
+  echo 'Usage: scripts/deploy.sh {init|build|package-images|up|backup|restore ARCHIVE|status|logs|down}'
   exit 0
 fi
 [[ -f deploy/.env ]] || { echo '先执行 scripts/deploy.sh init' >&2; exit 1; }
@@ -46,6 +46,38 @@ backup() (
 
 case "$ACTION" in
   build) compose build --pull api web ;;
+  package-images)
+    local_tag="$(sed -n 's/^IMAGE_TAG=//p' deploy/.env | tail -n 1)"
+    local_tag="${local_tag:-local}"
+    target_platform="$(sed -n 's/^DOCKER_PLATFORM=//p' deploy/.env | tail -n 1)"
+    target_platform="${target_platform:-linux/amd64}"
+    [[ "$local_tag" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { echo 'IMAGE_TAG 格式无效' >&2; exit 1; }
+    [[ "$target_platform" =~ ^linux/(amd64|arm64)$ ]] || { echo 'DOCKER_PLATFORM 仅支持 linux/amd64 或 linux/arm64' >&2; exit 1; }
+    compose build --pull api web
+    backend_image="businesslens-backend:$local_tag"
+    web_image="businesslens-web:$local_tag"
+    for image_name in "$backend_image" "$web_image"; do
+      image_platform="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image_name")"
+      [[ "$image_platform" == "$target_platform" ]] || {
+        echo "$image_name 平台为 $image_platform，预期 $target_platform" >&2
+        exit 1
+      }
+    done
+    mkdir -p "$ROOT/artifacts"
+    chmod 700 "$ROOT/artifacts"
+    bundle="$ROOT/artifacts/businesslens-images-${local_tag}-${target_platform//\//-}.tar.gz"
+    docker save "$backend_image" "$web_image" | gzip -1 > "$bundle.part"
+    mv "$bundle.part" "$bundle"
+    if command -v sha256sum >/dev/null 2>&1; then
+      checksum="$(sha256sum "$bundle" | awk '{print $1}')"
+    else
+      checksum="$(shasum -a 256 "$bundle" | awk '{print $1}')"
+    fi
+    printf '%s  %s\n' "$checksum" "$(basename -- "$bundle")" > "$bundle.sha256"
+    chmod 600 "$bundle" "$bundle.sha256"
+    echo "镜像包：$bundle"
+    echo "校验文件：$bundle.sha256"
+    ;;
   up)
     # Validate keys before stopping the currently running application.
     compose run --rm --no-deps -T migrate python -c \

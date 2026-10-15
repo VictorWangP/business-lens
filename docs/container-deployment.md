@@ -4,7 +4,7 @@
 
 ## 1. 服务器准备
 
-安装 Docker Engine 与 Docker Compose 插件，参考 [Docker 官方 Linux 安装说明](https://docs.docker.com/engine/install/)。确认 Docker 服务开机启动，并允许部署用户运行 Docker。安装 Git、Python 3（仅生成配置需要）、curl。镜像构建需要访问 Docker Hub、PyPI、npm registry，以及 tiktoken 的 tokenizer 下载地址；运行时需要访问实际配置的模型服务和业务数据库。
+安装 Docker Engine 与 Docker Compose 插件，参考 [Docker 官方 Linux 安装说明](https://docs.docker.com/engine/install/)。确认 Docker 服务开机启动，并允许部署用户运行 Docker。安装 Git、Python 3（仅生成配置需要）、curl。Dockerfile 的 Python、Node 和 Nginx 基础镜像通过 DaoCloud 的 Docker Hub 代理获取；构建仍需访问 PyPI、npm registry，以及 tiktoken 的 tokenizer 下载地址。运行时需要访问实际配置的模型服务和业务数据库。
 
 ```bash
 docker version
@@ -37,6 +37,7 @@ bash scripts/deploy.sh init
 
 ```dotenv
 IMAGE_TAG=20261015-1
+DOCKER_PLATFORM=linux/amd64
 HTTP_BIND=127.0.0.1
 HTTP_PORT=8080
 CORS_ORIGINS=["https://lens.example.com"]
@@ -104,6 +105,42 @@ server {
 bash scripts/deploy.sh build
 bash scripts/deploy.sh up
 ```
+
+也可以在本地构建镜像，再传到服务器运行。**镜像必须匹配服务器架构**：服务器执行 `uname -m`，`x86_64` 对应 `linux/amd64`，`aarch64` 对应 `linux/arm64`。在本机 `deploy/.env` 中设置相同平台和版本，例如：
+
+```dotenv
+IMAGE_TAG=20261015-1
+DOCKER_PLATFORM=linux/amd64
+```
+
+启动本机 Docker Desktop/Engine 后，在项目根目录打包：
+
+```bash
+bash scripts/deploy.sh package-images
+```
+
+脚本会按指定平台构建 API 和前端镜像，检查镜像架构，再生成 `artifacts/businesslens-images-20261015-1-linux-amd64.tar.gz` 及 SHA-256 校验文件。镜像构建需要本地 Docker daemon 和网络；Apple Silicon 可通过 Docker Desktop 为 `linux/amd64` 构建，但速度可能较慢。
+
+将项目部署文件、镜像包和校验文件传到服务器。务必在服务器保留其自己的 `deploy/.env` 密钥；只同步 `IMAGE_TAG` 和 `DOCKER_PLATFORM` 设置，不要用本机 `.env` 覆盖服务器密钥：
+
+```bash
+ssh deploy@YOUR_SERVER 'mkdir -p /opt/businesslens/artifacts'
+scp artifacts/businesslens-images-20261015-1-linux-amd64.tar.gz \
+  artifacts/businesslens-images-20261015-1-linux-amd64.tar.gz.sha256 \
+  deploy@YOUR_SERVER:/opt/businesslens/artifacts/
+```
+
+在 Linux 服务器上加载并启动：
+
+```bash
+cd /opt/businesslens
+cd artifacts && sha256sum -c businesslens-images-20261015-1-linux-amd64.tar.gz.sha256 && cd ..
+docker load -i artifacts/businesslens-images-20261015-1-linux-amd64.tar.gz
+# 确保服务器 deploy/.env 中 IMAGE_TAG 和 DOCKER_PLATFORM 与镜像包一致
+bash scripts/deploy.sh up
+```
+
+发布新版本时使用新的 `IMAGE_TAG`，本地和服务器保持一致。服务器不需要构建镜像，但仍需要 Docker Compose、项目的 Compose/运维脚本，以及配置好的 `deploy/.env`。数据库迁移和数据备份流程与服务器构建方案相同。
 
 检测到已有 API/worker 容器时，`up` 会先进行一次全卷备份，再迁移。备份与升级会有短暂停机；请先等待重要任务完成。备份脚本停止 API、worker 和 web，确保 SQLite WAL、checkpoint 与业务文件一起归档，再恢复此前运行的服务。手动备份：
 
