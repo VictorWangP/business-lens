@@ -45,7 +45,6 @@ export async function apiRequest<T = any>(
       errorDetail = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map(item => item.msg || '输入有误').join('；') : errorDetail;
     } catch {}
     const error = Object.assign(new Error(errorDetail), {status:response.status});
-    if (response.status === 403 && token === getToken() && path.startsWith('/feedback')) window.dispatchEvent(new Event('feedback:forbidden'));
     throw error;
   }
 

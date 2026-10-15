@@ -44,11 +44,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setTokenState(null);
     };
-    const handleFeedbackForbidden = () => setUser(current => current ? {...current, role:'user'} : current);
-    window.addEventListener('feedback:forbidden', handleFeedbackForbidden);
     window.addEventListener('focus', fetchCurrentUser);
     window.addEventListener('auth:unauthorized', handleUnauthorized);
-    return () => {window.removeEventListener('auth:unauthorized', handleUnauthorized);window.removeEventListener('feedback:forbidden', handleFeedbackForbidden);window.removeEventListener('focus', fetchCurrentUser);};
+    return () => {window.removeEventListener('auth:unauthorized', handleUnauthorized);window.removeEventListener('focus', fetchCurrentUser);};
   }, []);
 
   const login = async (username: string, password: string) => {

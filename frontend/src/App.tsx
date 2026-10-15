@@ -30,7 +30,6 @@ export function AppContent() {
   );
   const defaultModelId = configs?.model_setting?.default_model || '';
   const [currentTab, setCurrentTab] = useState<string>('chat');
-  useEffect(() => { if (currentTab === 'feedback' && user?.role !== 'feedback_admin') setCurrentTab('chat'); }, [user?.role, currentTab]);
   const audioAdapters = useMemo(() => createAudioAdapters(message => toast.error(message), {
     voiceName: configs?.voice_tts?.voice_name,
     speed: configs?.voice_tts?.speed,
@@ -145,7 +144,7 @@ export function AppContent() {
                 onStart={startWorkspaceConversation} onReturn={() => setCurrentTab('chat')} onManage={setCurrentTab} />
             </div>
 
-            {currentTab === 'feedback' && user?.role === 'feedback_admin' && <div className="flex-1 overflow-y-auto bg-background"><FeedbackView onForbidden={() => setCurrentTab('chat')} /></div>}
+            {currentTab === 'feedback' && user && <div className="flex-1 overflow-y-auto bg-background"><FeedbackView /></div>}
             {/* 系统管理 -> 应用配置 */}
             {currentTab === 'config' && (
               <div className="flex-1 overflow-y-auto bg-background">

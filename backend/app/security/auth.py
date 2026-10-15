@@ -52,9 +52,3 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
     return user
-
-
-async def get_feedback_admin(user: User = Depends(get_current_user)) -> User:
-    if user.role != 'feedback_admin':
-        raise HTTPException(403, '无回复校对权限')
-    return user

@@ -71,7 +71,7 @@ it('preserves a failed submission and confirms discarding changes',async()=>{
 
 it('requires a completion note and saves with the loaded version',async()=>{
   const user=userEvent.setup(),onSaved=vi.fn();vi.mocked(apiRequest).mockResolvedValue(detail);
-  render(<FeedbackProcessDialog id="f1" onClose={vi.fn()} onSaved={onSaved} onForbidden={vi.fn()}/>);
+  render(<FeedbackProcessDialog id="f1" onClose={vi.fn()} onSaved={onSaved}/>);
   expect(await screen.findByText('账龄主要集中在 30–60 天。')).toBeInTheDocument();
   await choose('处理状态','已处理');
   expect(screen.getByRole('button',{name:'确认'})).toBeDisabled();
@@ -84,7 +84,7 @@ it('requires a completion note and saves with the loaded version',async()=>{
 it('keeps draft on conflict and requires explicit reload before retrying',async()=>{
   const user=userEvent.setup(),onSaved=vi.fn();
   vi.mocked(apiRequest).mockResolvedValueOnce(detail).mockRejectedValueOnce(Object.assign(new Error('版本冲突'),{status:409})).mockResolvedValueOnce({...detail,version:2,processing_note:'他人的处理备注'}).mockResolvedValueOnce(detail);
-  render(<FeedbackProcessDialog id="f1" onClose={vi.fn()} onSaved={onSaved} onForbidden={vi.fn()}/>);
+  render(<FeedbackProcessDialog id="f1" onClose={vi.fn()} onSaved={onSaved}/>);
   await screen.findByText('本月账龄');
   await user.type(screen.getByRole('textbox',{name:'处理备注'}),'保留本地核查');
   await user.click(screen.getByRole('button',{name:'确认'}));
@@ -101,7 +101,7 @@ it('keeps draft on conflict and requires explicit reload before retrying',async(
 
 it('searches on enter, combines filters and resets pagination',async()=>{
   const user=userEvent.setup();vi.mocked(apiRequest).mockResolvedValue({items:[detail],total:21,page:1,page_size:10});
-  render(<FeedbackView onForbidden={vi.fn()}/>);
+  render(<FeedbackView/>);
   await screen.findByText('张经理');
   await user.click(screen.getByRole('button',{name:'下一页'}));
   await waitFor(()=>expect(apiRequest).toHaveBeenLastCalledWith(expect.stringContaining('page=2'),expect.anything()));
@@ -113,9 +113,9 @@ it('searches on enter, combines filters and resets pagination',async()=>{
   await waitFor(()=>expect(apiRequest).toHaveBeenLastCalledWith(expect.stringContaining('status=pending'),expect.anything()));
 });
 
-it('clears management data and exits after permission revocation',async()=>{
-  const onForbidden=vi.fn();vi.mocked(apiRequest).mockRejectedValue(Object.assign(new Error('无回复校对权限'),{status:403}));
-  render(<FeedbackView onForbidden={onForbidden}/>);
-  await waitFor(()=>expect(onForbidden).toHaveBeenCalled());
-  expect(screen.queryByText('张经理')).not.toBeInTheDocument();
+it('shows API errors without removing the feedback management page',async()=>{
+  vi.mocked(apiRequest).mockRejectedValue(Object.assign(new Error('请求被拒绝'),{status:403}));
+  render(<FeedbackView/>);
+  expect(await screen.findByRole('alert')).toHaveTextContent('请求被拒绝');
+  expect(screen.getByRole('heading',{name:'回复校对'})).toBeInTheDocument();
 });

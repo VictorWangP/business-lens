@@ -18,10 +18,3 @@ it('ignores a late authorization failure belonging to a previous login',async()=
   await rejected;expect(getToken()).toBe('new-token');expect(listener).not.toHaveBeenCalled();
   window.removeEventListener('auth:unauthorized',listener);
 });
-it('signals feedback permission revocation without ending the login session',async()=>{
-  const listener=vi.fn();window.addEventListener('feedback:forbidden',listener);
-  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:403,json:async()=>({detail:'无回复校对权限'})}));
-  await expect(apiRequest('/feedback')).rejects.toMatchObject({status:403});
-  expect(listener).toHaveBeenCalledOnce();expect(getToken()).toBe('current-token');
-  window.removeEventListener('feedback:forbidden',listener);
-});

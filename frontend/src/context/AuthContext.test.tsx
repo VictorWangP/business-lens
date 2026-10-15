@@ -15,12 +15,6 @@ it('keeps the active account on a transient focus refresh failure',async()=>{
   await act(async()=>{window.dispatchEvent(new Event('focus'));});
   expect(screen.getByText('核查员:feedback_admin')).toBeInTheDocument();expect(getToken()).toBe('original-token');
 });
-it('removes feedback management access on a forbidden event',async()=>{
-  vi.mocked(apiRequest).mockResolvedValue(reviewer);
-  render(<AuthProvider><Monitor/></AuthProvider>);await screen.findByText('核查员:feedback_admin');
-  act(()=>window.dispatchEvent(new Event('feedback:forbidden')));
-  expect(screen.getByText('核查员:user')).toBeInTheDocument();expect(getToken()).toBe('original-token');
-});
 it('ignores an old identity response after login changed',async()=>{
   let finish:(value:unknown)=>void;
   vi.mocked(apiRequest).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;})).mockResolvedValueOnce({access_token:'new-token',user:{...reviewer,id:'new',username:'新用户',role:'user'}});

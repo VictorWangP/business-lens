@@ -10,7 +10,7 @@ import {MarkdownContent} from '../chat/MarkdownContent';
 import {BusinessAnswerContent} from '../chat/BusinessAnswerPart';
 import {DiscardDialog,FeedbackSelect} from './FeedbackShared';
 
-export function FeedbackProcessDialog({id,onClose,onSaved,onForbidden}:{id:string;onClose:()=>void;onSaved:()=>void;onForbidden:()=>void}) {
+export function FeedbackProcessDialog({id,onClose,onSaved}:{id:string;onClose:()=>void;onSaved:()=>void}) {
   const [detail,setDetail]=useState<FeedbackDetail|null>(null),[status,setStatus]=useState<FeedbackStatus>('pending'),[note,setNote]=useState('');
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[conflict,setConflict]=useState(false),[discard,setDiscard]=useState(false);
   const [reload,setReload]=useState(0);
@@ -21,7 +21,7 @@ export function FeedbackProcessDialog({id,onClose,onSaved,onForbidden}:{id:strin
     apiRequest<FeedbackDetail>(`/feedback/${id}`,{signal:controller.signal}).then(value=>{
       if(controller.signal.aborted)return;
       setDetail(value);setStatus(value.status);setNote(value.processing_note);setConflict(false);
-    }).catch(error=>{if(controller.signal.aborted)return;if([401,403].includes(errorStatus(error)||0)){onForbidden();return;}setError(errorMessage(error));}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+    }).catch(error=>{if(controller.signal.aborted)return;setError(errorMessage(error));}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
   },[id,reload]);
   const dirty=!!detail && (status!==detail.status || note!==detail.processing_note);
@@ -32,7 +32,7 @@ export function FeedbackProcessDialog({id,onClose,onSaved,onForbidden}:{id:strin
       const value=await apiRequest<FeedbackDetail>(`/feedback/${id}`);
       if(!alive.current)return;
       setDetail(value);setConflict(false);setError('最新记录已加载，当前草稿已保留。请对照最新备注核查后再确认。');
-    }catch(error){if([401,403].includes(errorStatus(error)||0)){onForbidden();return;}if(alive.current)setError(errorMessage(error));}
+    }catch(error){if(alive.current)setError(errorMessage(error));}
     finally{if(alive.current)setBusy(false);}
   };
   const save=async()=>{
@@ -44,7 +44,6 @@ export function FeedbackProcessDialog({id,onClose,onSaved,onForbidden}:{id:strin
       toast.success('反馈处理已保存');window.dispatchEvent(new Event('feedback:updated'));onSaved();
     }catch(error){
       if(!alive.current)return;
-      if([401,403].includes(errorStatus(error)||0)){onForbidden();return;}
       if(errorStatus(error)===409){setConflict(true);setError('记录已被其他处理人更新，请重新加载后处理。当前草稿已保留。');}
       else if(!errorStatus(error)){
         // A lost HTTP response may still have committed. Reconcile without overwriting drafts.
