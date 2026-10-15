@@ -5,10 +5,10 @@ from app.agents.answer import parse_answer, render_answer, AnswerValidationError
 QUERY = {'citation_id':'Q1','rows':[{'月份':'十月','收入':10}], 'truncated':False}
 
 def parse(section=None, suggestions=None, **extra):
-    payload={'version':1,'sections':[section or {'title':'趋势','summary':'收入为 10 [查询 Q1] [来源 S1]'}],
+    payload={'version':1,'sections':[section or {'title':'趋势','summary':'收入为 10 [查询 Q1]'}],
              'suggestions':suggestions if suggestions is not None else []}
     payload.update(extra)
-    return parse_answer(json.dumps(payload,ensure_ascii=False),enabled=False,allow_code=False,queries=[QUERY],citations={'S1':{}})
+    return parse_answer(json.dumps(payload,ensure_ascii=False),enabled=False,allow_code=False,queries=[QUERY])
 
 
 @pytest.mark.parametrize('source',[
@@ -46,7 +46,7 @@ def test_numbered_prose_does_not_duplicate_exact_table_data():
 
 def test_only_explicit_code_field_is_allowed_when_requested():
     payload={'sections':[{'title':'示例','summary':'按需求提供示例。','code':{'language':'python','content':'print(1)'}}], 'suggestions':[]}
-    answer=parse_answer(json.dumps(payload),enabled=False,allow_code=True,queries=[],citations={})
+    answer=parse_answer(json.dumps(payload),enabled=False,allow_code=True,queries=[])
     assert '```python\nprint(1)\n```' in render_answer(answer)
 
 
@@ -54,4 +54,22 @@ def test_only_explicit_code_field_is_allowed_when_requested():
 def test_enabled_feature_requires_exactly_three_distinct_questions(suggestions):
     with pytest.raises(AnswerValidationError):
         parse_answer(json.dumps({'sections':[{'title':'结果','summary':'结果。'}],'suggestions':suggestions}),
-                     enabled=True,allow_code=False,queries=[],citations={})
+                     enabled=True,allow_code=False,queries=[])
+
+
+def test_parse_answer_maps_uuid_query_id_to_citation_id():
+    query_with_uuid = {'query_id': '6c483c05-e183-4f4f-95cf-eb3f9a7ce4c5', 'citation_id': 'Q6c483c05e1834f4f95cfeb3f9a7ce4c5', 'rows': [{'a': 1}], 'truncated': False}
+    payload = {
+        'version': 1,
+        'sections': [{
+            'title': '商机分析',
+            'summary': '阶段统计如 [查询 6c483c05-e183-4f4f-95cf-eb3f9a7ce4c5]',
+            'query_id': '6c483c05-e183-4f4f-95cf-eb3f9a7ce4c5',
+            'show_table': True
+        }],
+        'suggestions': []
+    }
+    answer = parse_answer(json.dumps(payload, ensure_ascii=False), enabled=False, allow_code=False, queries=[query_with_uuid])
+    assert answer.sections[0].query_id == 'Q6c483c05e1834f4f95cfeb3f9a7ce4c5'
+    assert '[查询 Q6c483c05e1834f4f95cfeb3f9a7ce4c5]' in answer.sections[0].summary
+

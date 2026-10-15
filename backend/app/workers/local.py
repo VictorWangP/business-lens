@@ -1,57 +1,17 @@
 """Run with python -m app.workers.local. One lightweight process; no Redis or Docker needed."""
 import asyncio
+import argparse
+from contextlib import nullcontext
 import logging
-from datetime import datetime, timedelta
-from sqlalchemy import select, update, or_, and_
-from app.database import AsyncSessionLocal, engine
-from app.models.platform import IngestionJob, AgentRun, MaintenanceJob
-from app.ingestion.pipeline import ingest
-from app.ingestion.maintenance import maintain
+import signal
+from datetime import UTC, datetime, timedelta
+from app.database import engine
+from app.application.chat import recover_expired_agent_runs, pending_agent_runs
 from app.config import settings
+from app.workers.frequent import run_frequent_worker, worker_lock
 
 logger=logging.getLogger(__name__)
 
-async def pending_jobs():
-    async with AsyncSessionLocal() as db:
-        now = datetime.utcnow()
-        return list((await db.scalars(select(IngestionJob.id).where(or_(
-            IngestionJob.status=='queued',
-            and_(IngestionJob.status=='retrying',IngestionJob.updated_at < now-timedelta(seconds=15)),
-            and_(IngestionJob.status=='processing',IngestionJob.updated_at < now-timedelta(minutes=15))
-        )).order_by(IngestionJob.created_at).limit(20))).all())
-
-
-async def recover_expired_agent_runs():
-    from app.application.chat import persist_run_event
-    async with AsyncSessionLocal() as db:
-        now = datetime.utcnow()
-        runs = (await db.execute(select(AgentRun.id, AgentRun.status).where(
-            AgentRun.status.in_(['running', 'cancel_requested']),
-            or_(AgentRun.lease_expires_at.is_(None), AgentRun.lease_expires_at < now)
-        ))).all()
-        recovered = []
-        for run in runs:
-            cancelled = run.status == 'cancel_requested'
-            result = await db.execute(update(AgentRun).where(
-                AgentRun.id == run.id, AgentRun.status == run.status,
-                or_(AgentRun.lease_expires_at.is_(None), AgentRun.lease_expires_at < now)
-            ).values(status='cancelled' if cancelled else 'queued',
-                     error='用户停止' if cancelled else '',
-                     finished_at=now if cancelled else None, lease_expires_at=None))
-            if result.rowcount == 1:
-                recovered.append((run.id, cancelled))
-        await db.commit()
-    for run_id, cancelled in recovered:
-        if cancelled:
-            await persist_run_event(run_id, {'type': 'RUN_ERROR', 'code': 'CANCELLED', 'message': '用户已停止执行'})
-
-
-async def pending_agent_runs(limit: int):
-    if settings.TASK_BACKEND != 'database' or limit <= 0:
-        return []
-    async with AsyncSessionLocal() as db:
-        return list((await db.scalars(select(AgentRun.id).where(AgentRun.status == 'queued')
-            .order_by(AgentRun.created_at).limit(limit))).all())
 
 async def run_agent_worker():
     agent_tasks: set[asyncio.Task] = set()
@@ -59,7 +19,7 @@ async def run_agent_worker():
         while True:
             await recover_expired_agent_runs()
             free_slots = max(0, settings.AGENT_WORKER_CONCURRENCY - len(agent_tasks))
-            for run_id in await pending_agent_runs(free_slots):
+            for run_id in await pending_agent_runs(free_slots) if settings.TASK_BACKEND == 'database' else []:
                 task = asyncio.create_task(run_agent_safely(run_id))
                 agent_tasks.add(task)
                 task.add_done_callback(agent_tasks.discard)
@@ -71,25 +31,37 @@ async def run_agent_worker():
             await asyncio.gather(*agent_tasks, return_exceptions=True)
 
 
-async def run():
-    agent_worker = asyncio.create_task(run_agent_worker())
+async def run(roles=None):
+    consumers = {'agent': run_agent_worker, 'frequent': run_frequent_worker}
+    selected = set(consumers if roles is None else roles)
+    if not selected or selected - consumers.keys():
+        raise ValueError('Worker roles must be agent or frequent')
+    # Fail before starting any consumer if another frequent worker owns the lock.
+    with worker_lock() if 'frequent' in selected else nullcontext():
+        tasks = []
+        try:
+            tasks = [asyncio.create_task(consumer(), name=f'{role}-worker')
+                     for role, consumer in consumers.items() if role in selected]
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                task.result()
+            raise RuntimeError('Worker consumer exited unexpectedly')
+        finally:
+            # Keep the frequent lock until all consumers have settled and writes ended.
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            await engine.dispose()
+
+
+async def main(roles):
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    loop.add_signal_handler(signal.SIGTERM, task.cancel)
     try:
-        while True:
-            for job_id in await pending_jobs():
-                try:
-                    await asyncio.wait_for(ingest(job_id),timeout=840)
-                except Exception as exc:
-                    logger.warning('Ingestion failed: job=%s category=%s',job_id,type(exc).__name__)
-            for job_id in await pending_maintenance():
-                try:
-                    await maintain(job_id)
-                except Exception as exc:
-                    logger.warning('Maintenance failed: job=%s category=%s', job_id, type(exc).__name__)
-            await asyncio.sleep(3)
+        await run(roles)
     finally:
-        agent_worker.cancel()
-        await asyncio.gather(agent_worker, return_exceptions=True)
-        await engine.dispose()
+        loop.remove_signal_handler(signal.SIGTERM)
 
 
 async def run_agent_safely(run_id):
@@ -100,16 +72,11 @@ async def run_agent_safely(run_id):
         logger.warning('Agent worker failed: run=%s category=%s', run_id, type(exc).__name__)
 
 
-async def pending_maintenance():
-    async with AsyncSessionLocal() as db:
-        now = datetime.utcnow()
-        return list((await db.scalars(select(MaintenanceJob.id).where(or_(
-            MaintenanceJob.status == 'queued',
-            and_(MaintenanceJob.status == 'retrying', MaintenanceJob.updated_at < now-timedelta(seconds=15)),
-            and_(MaintenanceJob.status == 'processing', MaintenanceJob.updated_at < now-timedelta(minutes=15))
-        )).order_by(MaintenanceJob.created_at).limit(20))).all())
-
 if __name__=='__main__':
+    parser = argparse.ArgumentParser(description='Run background consumers in one process')
+    parser.add_argument('--roles', nargs='+', choices=['agent', 'frequent'],
+                        default=['agent', 'frequent'])
+    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
-    try: asyncio.run(run())
-    except KeyboardInterrupt: pass
+    try: asyncio.run(main(args.roles))
+    except (KeyboardInterrupt, asyncio.CancelledError): pass

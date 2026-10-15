@@ -1,4 +1,7 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -6,7 +9,7 @@ from app.config import settings
 from app.database import engine
 from app.infrastructure.telemetry import configure
 import app.models
-from app.api import auth, settings as app_settings, sessions, knowledge, memory, audio, chat, data_sources, runs, frequent, workspaces, feedback
+from app.api import auth, settings as app_settings, sessions, memory, audio, chat, data_sources, runs, frequent, workspaces, feedback
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -17,7 +20,8 @@ async def lifespan(app: FastAPI):
     settings.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     async with engine.connect() as conn:
         version = await conn.scalar(text('SELECT version_num FROM alembic_version'))
-        if version != '0001_langgraph':
+        expected = ScriptDirectory.from_config(Config(str(Path(__file__).parent / 'alembic.ini'))).get_current_head()
+        if version != expected:
             raise RuntimeError('请先执行 alembic upgrade head')
     yield
     await engine.dispose()
@@ -26,7 +30,7 @@ app = FastAPI(title=settings.PROJECT_NAME, version='2.0.0', lifespan=lifespan)
 configure(app)
 app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS, allow_credentials=True,
                    allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allow_headers=['Authorization', 'Content-Type'])
-for module in (auth, app_settings, sessions, knowledge, memory, audio, chat, data_sources, runs, frequent, workspaces, feedback):
+for module in (auth, app_settings, sessions, memory, audio, chat, data_sources, runs, frequent, workspaces, feedback):
     app.include_router(module.router, prefix='/api')
 
 @app.get('/api/health')

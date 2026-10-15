@@ -3,7 +3,6 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User
-from app.models.conversation import Conversation
 from app.models.feedback import AnswerFeedback
 from app.schemas.feedback import FeedbackCreate, FeedbackUpdate, FeedbackStatus
 from app.security.auth import get_current_user, get_feedback_admin
@@ -20,14 +19,9 @@ async def submit(message_id: str, payload: FeedbackCreate, response: Response,
     return service.summary(record, not created)
 
 
-@router.get('/sessions/{session_id}/feedback')
-async def summaries(session_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    conv = await db.scalar(select(Conversation.id).where(Conversation.id == session_id, Conversation.user_id == user.id))
-    if not conv:
-        raise HTTPException(404, '会话不存在')
-    records = (await db.scalars(select(AnswerFeedback).where(
-        AnswerFeedback.conversation_id == session_id, AnswerFeedback.reporter_id == user.id))).all()
-    return [service.summary(record) for record in records]
+@router.get('/sessions/{session_id}/feedback-context')
+async def feedback_context(session_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await service.feedback_context(db, user, session_id)
 
 
 @router.get('/feedback')

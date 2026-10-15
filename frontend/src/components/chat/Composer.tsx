@@ -12,7 +12,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '../ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 
 interface ComposerProps {
-  kbIds?: string[]; sourceIds?: string[];
+  sourceIds?: string[];
   workspaceId?: string;
   workspaceVersion?: number;
   composerKey?: string;
@@ -24,7 +24,7 @@ interface ComposerProps {
 
 export const Composer: React.FC<ComposerProps> = ({
   workspaceId, workspaceVersion, composerKey, isLoading, sendDisabled = false,
-  kbIds = [], sourceIds = [], selectedModel, onModelChange,
+  sourceIds = [], selectedModel, onModelChange,
 }) => {
   const { configs } = useConfig();
   const { bookmarks, removeBookmark } = useBookmarks();
@@ -33,7 +33,7 @@ export const Composer: React.FC<ComposerProps> = ({
   useEffect(() => { composer.setText(''); }, [composerKey]);
   const isRecording = useAuiState(s => s.composer.dictation != null);
   const [quickOpen, setQuickOpen] = useState(false);
-  const frequent = useFrequentQuestions(kbIds, sourceIds, configs?.frequent_questions?.is_enabled ?? false, configs?.frequent_questions?.threshold ?? 3, isLoading, workspaceId, workspaceVersion);
+  const frequent = useFrequentQuestions(sourceIds, configs?.frequent_questions?.is_enabled ?? false, configs?.frequent_questions?.threshold ?? 3, isLoading, workspaceId, workspaceVersion);
 
   const availableModels = configs?.model_setting?.available_models.filter(m => m.type !== 'embedding') || [];
   const defaultModelId = configs?.model_setting?.default_model || '';
@@ -47,7 +47,7 @@ export const Composer: React.FC<ComposerProps> = ({
 
   return <div className="w-full max-w-4xl mx-auto px-4 pb-5">
     <ComposerPrimitive.Root className="rounded-2xl border bg-background p-3 shadow-sm focus-within:ring-2 focus-within:ring-ring/20">
-      <ComposerPrimitive.Input aria-label="输入问题" placeholder="问业务数据问题，或检索企业内部知识库文档…"
+      <ComposerPrimitive.Input aria-label="输入问题" placeholder="询问业务数据、指标或报表…"
         rows={2} maxRows={8} submitMode="enter" disabled={isLoading || sendDisabled} addAttachmentOnPaste={false}
         className="w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground" />
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
@@ -107,7 +107,7 @@ export const Composer: React.FC<ComposerProps> = ({
             {isRecording ? <ComposerPrimitive.StopDictation asChild><Button type="button" variant="destructive" size="icon" aria-label="停止录音"><Square /></Button></ComposerPrimitive.StopDictation>
               : <ComposerPrimitive.Dictate asChild><Button type="button" variant="ghost" size="icon" disabled={isLoading || sendDisabled} aria-label="语音输入"><Mic /></Button></ComposerPrimitive.Dictate>}
           </TooltipTrigger><TooltipContent>{isRecording ? '停止录音' : '语音输入'}</TooltipContent></Tooltip>}
-          {isLoading ? <ComposerPrimitive.Cancel asChild><Button type="button" size="icon" variant="destructive" aria-label="停止生成" onClick={cancelPersistentRun}><Square /></Button></ComposerPrimitive.Cancel>
+          {isLoading ? <Button type="button" size="icon" variant="destructive" aria-label="停止生成" onClick={() => { void cancelPersistentRun(); }}><Square /></Button>
             : <ComposerPrimitive.Send asChild><Button size="icon" disabled={sendDisabled} aria-label="发送问题"><ArrowUp /></Button></ComposerPrimitive.Send>}
         </div>
       </div>

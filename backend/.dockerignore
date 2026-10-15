@@ -1,5 +1,12 @@
-venv
-.venv
 .env
+.env.*
+!.env.example
+.venv
+venv
 __pycache__
+**/__pycache__
 .pytest_cache
+tests
+*.db
+*.sqlite*
+.DS_Store

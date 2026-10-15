@@ -22,6 +22,9 @@ export function ModelEditor({ model, models, onClose, onConfirm }: {
   const [id, setId] = useState(model?.id || '');
   const [name, setName] = useState(model?.name || '');
   const [description, setDescription] = useState(model?.description || '');
+  const [contextWindow, setContextWindow] = useState(model?.context_window?.toString() || '');
+  const [maxInput, setMaxInput] = useState(model?.max_input_tokens?.toString() || '');
+  const [maxOutput, setMaxOutput] = useState(model?.max_output_tokens?.toString() || '');
   const [showKey, setShowKey] = useState(false);
   const [catalog, setCatalog] = useState<string[]>([]);
   const [addAll, setAddAll] = useState(false);
@@ -57,6 +60,10 @@ export function ModelEditor({ model, models, onClose, onConfirm }: {
 
   function confirm() {
     setError('');
+    if (kind === 'llm' && [[contextWindow, 8192], [maxInput, 1024], [maxOutput, 256]].some(([value, minimum]) =>
+      value !== '' && (!Number.isSafeInteger(Number(value)) || Number(value) < Number(minimum)))) {
+      setError('模型容量必须为正整数：上下文至少 8192，输入至少 1024，输出至少 256'); return;
+    }
     const ids = addAll && !model
       ? catalog.includes(id.trim()) ? [id.trim(), ...catalog.filter(value => value !== id.trim())] : catalog
       : [id.trim()];
@@ -72,6 +79,11 @@ export function ModelEditor({ model, models, onClose, onConfirm }: {
       type: kind, provider: provider.trim() || '通用供应商', base_url: baseUrl.trim(),
       api_key: apiKey.trim() || undefined, credential_model_id: credentialId,
       description: description.trim() || undefined,
+      ...(kind === 'llm' && value === id.trim() ? {
+        context_window: contextWindow ? Number(contextWindow) : null,
+        max_input_tokens: maxInput ? Number(maxInput) : null,
+        max_output_tokens: maxOutput ? Number(maxOutput) : null,
+      } : {}),
     }));
     onConfirm(items, model?.id);
   }
@@ -141,6 +153,17 @@ export function ModelEditor({ model, models, onClose, onConfirm }: {
         <Input id="model-name" value={name} onChange={e => setName(e.target.value)} placeholder={id} /></div>
       <div className="space-y-2"><Label htmlFor="model-description">描述</Label>
         <Input id="model-description" value={description} onChange={e => setDescription(e.target.value)} /></div>
+      {kind === 'llm' && <div className="space-y-3">
+        <p className="text-xs text-muted-foreground">模型容量（Token）：百炼官方 Qwen 3.7/3.8 商业型号自动识别；其他模型可按供应商规格填写。留空使用默认容量。</p>
+        <div className="space-y-2"><Label htmlFor="model-context-window">上下文窗口</Label>
+          <Input id="model-context-window" type="number" min={8192} step={1} value={contextWindow} onChange={e => setContextWindow(e.target.value)} placeholder="自动" /></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2"><Label htmlFor="model-max-input">最大输入 Token</Label>
+            <Input id="model-max-input" type="number" min={1024} step={1} value={maxInput} onChange={e => setMaxInput(e.target.value)} placeholder="自动" /></div>
+          <div className="space-y-2"><Label htmlFor="model-max-output">最大输出 Token</Label>
+            <Input id="model-max-output" type="number" min={256} step={1} value={maxOutput} onChange={e => setMaxOutput(e.target.value)} placeholder="自动" /></div>
+        </div>
+      </div>}
       {!model && catalog.length > 0 && <div className="flex gap-2 items-start">
         <Checkbox id="model-add-all" checked={addAll} onCheckedChange={checked => setAddAll(checked === true)} />
         <Label htmlFor="model-add-all" className="text-xs leading-relaxed">添加全部 {catalog.length} 个模型，均按当前模型类型配置（混合类型供应商请分别添加）</Label>

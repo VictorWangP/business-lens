@@ -1,7 +1,5 @@
 """Model configuration and real provider calls. There are no synthetic success responses."""
 import json
-from typing import AsyncGenerator
-from openai import AsyncOpenAI
 from sqlalchemy import select
 from app.models.config import AppConfig
 from app.infrastructure.credentials import decrypt
@@ -33,14 +31,6 @@ class LLMService:
             raise ModelUnavailable('请在模型设置中配置有效的 API Key')
         return {'model_id': selected, 'model_name': item.get('name') or selected,
                 'base_url': base.rstrip('/'), 'api_key': key,
+                'context_window': item.get('context_window'), 'max_input_tokens': item.get('max_input_tokens'),
+                'max_output_tokens': item.get('max_output_tokens'),
                 'temperature': float(value.get('temperature', 0.2))}
-
-    @staticmethod
-    async def stream_chat_completion(db, user_id, model_id, messages) -> AsyncGenerator[str, None]:
-        cfg = await LLMService.get_model_config(db, user_id, model_id)
-        async with AsyncOpenAI(base_url=cfg['base_url'], api_key=cfg['api_key'], timeout=60, max_retries=1) as client:
-            stream = await client.chat.completions.create(model=cfg['model_id'], messages=messages,
-                                                         temperature=cfg['temperature'], stream=True)
-            async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content

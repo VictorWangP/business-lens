@@ -31,6 +31,9 @@ export interface ModelItem {
   api_key?: string;
   credential_model_id?: string;
   description?: string;
+  context_window?: number | null;
+  max_input_tokens?: number | null;
+  max_output_tokens?: number | null;
 }
 
 export interface ModelSettingConfig {

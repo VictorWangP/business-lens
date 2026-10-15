@@ -12,6 +12,24 @@ from app.services.model_provider import list_provider_models
 from main import app
 from test_platform import seed, auth
 
+
+@pytest.mark.asyncio
+async def test_model_capacity_roundtrips_to_runtime_configuration():
+    from app.services.llm_service import LLMService
+    user, _ = await seed()
+    item = {'id': 'custom-model', 'name': 'Custom', 'base_url': 'https://provider.test/v1', 'api_key': 'test-key',
+            'context_window': 262144, 'max_input_tokens': 240000, 'max_output_tokens': 16384}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=auth(user)) as client:
+        response = await client.put('/api/settings/app-config/model_setting', json={'config_value': {
+            'default_model': item['id'], 'available_models': [item]}})
+        assert response.status_code == 200
+        saved = (await client.get('/api/settings/app-config')).json()['model_setting']['available_models'][0]
+        assert saved['context_window'] == 262144 and saved['api_key'] == '********'
+    async with AsyncSessionLocal() as db:
+        runtime = await LLMService.get_model_config(db, user)
+        assert runtime['context_window'] == 262144
+        assert runtime['max_input_tokens'] == 240000 and runtime['max_output_tokens'] == 16384
+
 def mock_provider(monkeypatch, handler):
 
     def factory(**kwargs):
@@ -62,7 +80,7 @@ async def test_network_failures(monkeypatch, failure, expected):
 
 @pytest.mark.asyncio
 async def test_edit_rename_bulk_reuse_and_cross_user_isolation(monkeypatch):
-    a, b, _ = await seed()
+    a, b = await seed()
 
     def handler(request):
         assert request.headers['Authorization'] == 'Bearer provider-secret'
@@ -108,8 +126,12 @@ async def test_new_user_requires_ui_models_and_ignores_environment(monkeypatch):
         model = (await client.get('/api/settings/app-config', headers=auth(uid))).json()['model_setting']
         assert model['available_models'] == []
         assert not model['default_model'] and (not model['default_embedding_model'])
-        kb = (await client.post('/api/knowledge/bases', headers=auth(uid), json={'name': '模型校验'})).json()
-        workspace = (await client.post('/api/workspaces', headers=auth(uid), json={'name': '模型校验', 'kb_ids': [kb['id']]})).json()
+        async with AsyncSessionLocal() as db:
+            from app.models.platform import DataSource
+            ds = DataSource(user_id=uid, name='模型校验', connection_secret='unused')
+            db.add(ds); await db.commit()
+            ds_id = ds.id
+        workspace = (await client.post('/api/workspaces', headers=auth(uid), json={'name': '模型校验', 'source_ids': [ds_id]})).json()
         chat = await client.post('/api/chat/stream', headers=auth(uid), json=chat_input(**{'query': '你好', 'workspace_id': workspace['id']}))
         assert chat.status_code == 422 and '模型设置' in chat.json()['detail']
         async with AsyncSessionLocal() as db:

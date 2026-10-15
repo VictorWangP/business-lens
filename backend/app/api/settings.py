@@ -59,11 +59,7 @@ async def get_app_configs(
         greeting=w_val.get("greeting", "你好"),
         assistant_name=w_val.get("assistant_name", "我是经管之星·AI问数助手"),
         description=w_val.get("description", "欢迎使用智能AI问数，您可以向我咨询经营数据、报表分析相关问题。"),
-        questions=w_val.get("questions", [
-            "各产品线销售情况",
-            "北京的产品线收入情况",
-            "深圳的产品销售情况"
-        ])
+        questions=w_val.get("questions", [])
     )
 
     nq_enabled, nq_val = config_map.get("next_questions", (True, {}))

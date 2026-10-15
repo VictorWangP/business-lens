@@ -6,11 +6,7 @@ class WelcomeConfig(BaseModel):
     greeting: str = "你好"
     assistant_name: str = "我是经管之星·AI问数助手"
     description: str = "欢迎使用智能AI问数，您可以向我咨询经营数据、报表分析相关问题。"
-    questions: List[str] = [
-        "各产品线销售情况",
-        "北京的产品线收入情况",
-        "深圳的产品销售情况"
-    ]
+    questions: List[str] = Field(default_factory=list)
 
 class NextQuestionsConfig(BaseModel):
     is_enabled: bool = True
@@ -34,6 +30,9 @@ class ModelItem(BaseModel):
     api_key: Optional[str] = None
     description: Optional[str] = None
     credential_model_id: Optional[str] = None  # Existing saved key to reuse when changing model ID.
+    context_window: Optional[int] = Field(default=None, ge=8192)
+    max_input_tokens: Optional[int] = Field(default=None, ge=1024)
+    max_output_tokens: Optional[int] = Field(default=None, ge=256)
 
 class ProviderRequest(BaseModel):
     base_url: str

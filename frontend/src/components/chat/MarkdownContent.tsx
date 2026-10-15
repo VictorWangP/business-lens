@@ -12,8 +12,22 @@ import {
   TableCell,
 } from '../ui/table';
 import { cn } from '../../lib/utils';
+import { QueryCitationBadge } from './QueryCitationBadge';
 
 const remarkPlugins = [remarkGfm];
+const preprocessCitation = (text: string) => {
+  let cleaned = text;
+  // 1. Remove patterns like "数据来源：01_销售订单明细 [查询 Q...]" or "数据来源：[查询 Q...]"
+  cleaned = cleaned.replace(/(?:，|。|；|,|;|\s)*(?:数据来源|数据依据|数据来源于)[：:][^，。；;\n\r]*?\[查询\s+[^\]]+\](?:\s*。)?/g, '。');
+  // 2. Remove parenthetical citations like "（数据来源：[查询 Q...]）"
+  cleaned = cleaned.replace(/[(（](?:数据来源|数据依据)[：:][^)]*?\[查询\s+[^\]]+\]\s*[)）]/g, '');
+  // 3. Remove standalone "[查询 Q...]"
+  cleaned = cleaned.replace(/\[查询\s+[^\]]+\]/g, '');
+  // Clean up any double periods caused by replacement
+  cleaned = cleaned.replace(/。+/g, '。');
+  return cleaned;
+};
+
 const components = {
   table: ({ node, className, ...props }: React.ComponentPropsWithoutRef<'table'> & { node?: unknown }) => (
     <div className="my-4 rounded-xl border border-border overflow-x-auto">
@@ -47,14 +61,22 @@ const components = {
       {...props}
     />
   ),
-  a: ({ node, className, ...props }: React.ComponentPropsWithoutRef<'a'> & { node?: unknown }) => (
-    <a {...props} target="_blank" rel="noopener noreferrer" className={cn("text-primary hover:underline underline-offset-2", className)} />
-  ),
+  a: ({ node, className, href, children, ...props }: React.ComponentPropsWithoutRef<'a'> & { node?: unknown }) => {
+    if (href?.startsWith('#citation:')) {
+      const citationId = href.replace('#citation:', '');
+      return <QueryCitationBadge citationId={citationId} />;
+    }
+    return (
+      <a {...props} href={href} target="_blank" rel="noopener noreferrer" className={cn("text-primary hover:underline underline-offset-2", className)}>
+        {children}
+      </a>
+    );
+  },
 };
 
 export function MarkdownText() {
   return <MarkdownTextPrimitive className="assistant-markdown" remarkPlugins={remarkPlugins}
-    components={components} smooth={false} skipHtml />;
+    components={components} smooth={false} skipHtml preprocess={preprocessCitation} />;
 }
 
 export function MarkdownContent({ text, isRunning = false }: { text: string; isRunning?: boolean }) {

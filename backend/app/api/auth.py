@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from app.database import get_db
 from app.models.user import User
-from app.models.business import SalesOrder
 from app.models.config import AppConfig
 from app.schemas.config import ModelSettingConfig
 from app.schemas.auth import UserRegister, UserLogin, TokenResponse, UserOut
@@ -21,7 +20,7 @@ async def init_user_defaults(db: AsyncSession, user_id: str):
             "greeting": "你好",
             "assistant_name": "我是经管之星·AI问数助手",
             "description": "欢迎使用智能AI问数，您可以向我咨询经营数据、报表分析相关问题。",
-            "questions": ["各产品线销售情况", "北京的产品线收入情况", "深圳的产品销售情况"]
+            "questions": []
         }),
         ("next_questions", True, {"count": 3}),
         ("voice_tts", False, {"voice_name": "zh-CN-XiaoxiaoNeural", "speed": 1.0}),

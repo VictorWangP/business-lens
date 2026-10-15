@@ -14,29 +14,6 @@ class EmbeddingProvider:
     async def for_user(cls, db, user_id):
         return cls(await LLMService.get_model_config(db, user_id, kind='embedding'))
 
-    @classmethod
-    async def for_profile(cls, db, user_id, profile):
-        """Read old indexes with their configured model during a default-model migration."""
-        from sqlalchemy import select
-        from app.models.config import AppConfig
-        try:
-            provider = await cls.for_user(db, user_id)
-            if provider.profile == profile:
-                return provider
-        except ValueError:
-            pass
-        cfg = await db.scalar(select(AppConfig).where(AppConfig.user_id == user_id, AppConfig.config_key == 'model_setting'))
-        value = json.loads(cfg.config_value or '{}') if cfg else {}
-        model_ids = list(dict.fromkeys([item['id'] for item in value.get('available_models', []) if item.get('type') == 'embedding']))
-        for model_id in model_ids:
-            try:
-                provider = cls(await LLMService.get_model_config(db, user_id, model_id=model_id, kind='embedding'))
-                if provider.profile == profile:
-                    return provider
-            except ValueError:
-                continue
-        raise ValueError('索引对应的嵌入模型未配置；请保留旧模型配置或重建索引')
-
     async def embed(self, texts: list[str], *, timeout=90, max_retries=2) -> list[list[float]]:
         vectors = []
         async with AsyncOpenAI(base_url=self.config['base_url'], api_key=self.config['api_key'], timeout=timeout, max_retries=max_retries) as client:

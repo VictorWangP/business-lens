@@ -23,6 +23,7 @@ import type { Workspace } from '../workspaces/WorkspacesView';
 interface ThreadListProps {
   conversations: Conversation[];
   activeId: string | null;
+  onSelect: (id:string) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, newTitle: string) => void;
   onTogglePin: (id: string) => void;
@@ -38,6 +39,7 @@ interface ThreadListProps {
 export const ThreadList: React.FC<ThreadListProps> = ({
   conversations,
   activeId,
+  onSelect,
   onDelete,
   onRename,
   onTogglePin,
@@ -138,7 +140,7 @@ export const ThreadList: React.FC<ThreadListProps> = ({
             : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground'
         }`}
       >
-        <ThreadListItemPrimitive.Trigger asChild><Button variant="ghost"
+        <Button variant="ghost" onClick={() => onSelect(conv.id)}
           aria-label={conv.title}
           className="h-auto justify-start p-0 hover:bg-transparent flex items-center space-x-2.5 truncate flex-1 min-w-0 mr-1.5 text-xs">
           {isPinned ? (
@@ -147,7 +149,7 @@ export const ThreadList: React.FC<ThreadListProps> = ({
             <MessageSquare className="w-3.5 h-3.5 shrink-0 opacity-70" />
           )}
           <span className="block min-w-0 truncate text-left" title={conv.title}><ThreadListItemPrimitive.Title /></span>
-        </Button></ThreadListItemPrimitive.Trigger>
+        </Button>
 
         <div className="flex items-center space-x-0.5 shrink-0">
           {/* 非悬浮时若已置顶，常驻小图钉标志 */}

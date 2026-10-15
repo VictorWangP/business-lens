@@ -13,6 +13,13 @@ from app.security.auth import get_current_user
 
 router = APIRouter(prefix="/sessions", tags=["会话管理"])
 
+
+def conversation_output(conv):
+    return ConversationOut(id=conv.id, title=conv.title, model=conv.model,
+        workspace_id=conv.workspace_id,
+        scope_version=conv.scope_version, is_pinned=conv.is_pinned,
+        created_at=conv.created_at, updated_at=conv.updated_at)
+
 @router.get("", response_model=List[ConversationOut])
 async def list_sessions(
     current_user: User = Depends(get_current_user),
@@ -24,22 +31,7 @@ async def list_sessions(
     res = await db.execute(stmt)
     convs = res.scalars().all()
 
-    output = []
-    for c in convs:
-        kb_list = json.loads(c.kb_ids or "[]")
-        output.append(ConversationOut(
-            id=c.id,
-            title=c.title,
-            model=c.model,
-            kb_ids=kb_list,
-            source_ids=json.loads(c.source_ids or "[]"),
-            workspace_id=c.workspace_id,
-            scope_version=c.scope_version,
-            is_pinned=bool(c.is_pinned),
-            created_at=c.created_at,
-            updated_at=c.updated_at
-        ))
-    return output
+    return [conversation_output(conv) for conv in convs]
 
 @router.post("", response_model=ConversationOut)
 async def create_session(
@@ -48,32 +40,18 @@ async def create_session(
     db: AsyncSession = Depends(get_db)
 ):
     workspace = await get_workspace(db, current_user.id, payload.workspace_id)
-    kb_ids, source_ids = json.loads(workspace.kb_ids), json.loads(workspace.source_ids)
     conv = Conversation(
         workspace_id=payload.workspace_id,
-        source_ids=json.dumps(source_ids),
         user_id=current_user.id,
         title=payload.title or "新建对话",
         model=payload.model or "",
-        kb_ids=json.dumps(kb_ids),
         is_pinned=bool(payload.is_pinned) if payload.is_pinned is not None else False
     )
     db.add(conv)
     await db.commit()
     await db.refresh(conv)
 
-    return ConversationOut(
-        id=conv.id,
-        title=conv.title,
-        model=conv.model,
-        kb_ids=kb_ids,
-        source_ids=source_ids,
-        workspace_id=conv.workspace_id,
-        scope_version=conv.scope_version,
-        is_pinned=bool(conv.is_pinned),
-        created_at=conv.created_at,
-        updated_at=conv.updated_at
-    )
+    return conversation_output(conv)
 
 @router.get("/{session_id}", response_model=ConversationOut)
 async def get_session(
@@ -89,18 +67,7 @@ async def get_session(
     if not conv:
         raise HTTPException(status_code=404, detail="会话不存在")
 
-    return ConversationOut(
-        id=conv.id,
-        title=conv.title,
-        model=conv.model,
-        kb_ids=json.loads(conv.kb_ids or "[]"),
-        source_ids=json.loads(conv.source_ids or "[]"),
-        workspace_id=conv.workspace_id,
-        scope_version=conv.scope_version,
-        is_pinned=bool(conv.is_pinned),
-        created_at=conv.created_at,
-        updated_at=conv.updated_at
-    )
+    return conversation_output(conv)
 
 @router.put("/{session_id}", response_model=ConversationOut)
 async def update_session(
@@ -125,18 +92,7 @@ async def update_session(
         conv.is_pinned = payload.is_pinned
 
     await db.commit()
-    return ConversationOut(
-        id=conv.id,
-        title=conv.title,
-        model=conv.model,
-        kb_ids=json.loads(conv.kb_ids or "[]"),
-        source_ids=json.loads(conv.source_ids or "[]"),
-        workspace_id=conv.workspace_id,
-        scope_version=conv.scope_version,
-        is_pinned=bool(conv.is_pinned),
-        created_at=conv.created_at,
-        updated_at=conv.updated_at
-    )
+    return conversation_output(conv)
 
 @router.delete("/{session_id}")
 async def delete_session(
@@ -190,8 +146,6 @@ async def list_session_messages(
             role=m.role,
             content=m.content,
             tool_calls=json.loads(m.tool_calls) if m.tool_calls else None,
-            citations=json.loads(m.citations) if m.citations else None,
-            execution_events=(json.loads(m.tool_calls).get('execution_events', []) if m.tool_calls else []),
             created_at=m.created_at
         ))
     return output

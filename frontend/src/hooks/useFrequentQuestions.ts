@@ -8,16 +8,15 @@ export interface FrequentQuestion {
   last_asked_at: string;
 }
 
-export function useFrequentQuestions(kbIds: string[], sourceIds: string[], enabled: boolean, threshold: number, isLoading: boolean, workspaceId?: string, workspaceVersion?: number) {
-  const scope = JSON.stringify([Array.from(new Set(kbIds)).sort(), Array.from(new Set(sourceIds)).sort(), workspaceId, workspaceVersion]);
+export function useFrequentQuestions(sourceIds: string[], enabled: boolean, threshold: number, isLoading: boolean, workspaceId?: string, workspaceVersion?: number) {
+  const scope = JSON.stringify([Array.from(new Set(sourceIds)).sort(), workspaceId, workspaceVersion]);
   const [result, setResult] = useState<{scope: string; items: FrequentQuestion[]}>({scope: '', items: []});
   useEffect(() => {
     if (!enabled) { setResult({scope, items: []}); return; }
-    const [kbs, sources] = JSON.parse(scope) as string[][];
+    const [sources] = JSON.parse(scope) as string[][];
     const params = new URLSearchParams();
     if (workspaceId) params.set('workspace_id', workspaceId);
     else {
-      kbs.forEach(id => params.append('kb_ids', id));
       sources.forEach(id => params.append('source_ids', id));
     }
     let active = true;

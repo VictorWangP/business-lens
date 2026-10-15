@@ -30,14 +30,10 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     extra_hosts:
       - 'host.docker.internal:host-gateway'
-  frequent-worker:
-    <<: *backend
-    command: python -m app.workers.frequent
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
   worker:
     <<: *backend
     command: python -m app.workers.local
+    stop_grace_period: 60s
     extra_hosts:
       - 'host.docker.internal:host-gateway'
 volumes:

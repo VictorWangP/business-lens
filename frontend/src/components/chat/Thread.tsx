@@ -1,5 +1,6 @@
 import React from 'react';
 import {useAuiState} from '@assistant-ui/react';
+import {useAgUiInterrupts} from '@assistant-ui/react-ag-ui';
 import {fromRuntimeMessage} from '../../lib/chat-runtime';
 import {InterruptPrompt} from './InterruptPrompt';
 import { ThreadPrimitive } from '@assistant-ui/react';
@@ -10,14 +11,12 @@ import { useConfig } from '../../context/ConfigContext';
 import { Button } from '../ui/button';
 
 interface ThreadProps {
-  kbIds?: string[];
   sourceIds?: string[];
 
 
   workspaceId?: string;
   workspaceVersion?: number;
   workspaceWarning?: string;
-  pendingQuestion?: string;
   workspaceActionLabel?: string;
   onWorkspaceAction?: () => void;
   composerKey?: string;
@@ -30,10 +29,9 @@ interface ThreadProps {
 }
 
 export const Thread: React.FC<ThreadProps> = ({
-  kbIds,
   sourceIds,
   sendDisabled,
-  workspaceWarning, pendingQuestion, workspaceActionLabel, onWorkspaceAction,
+  workspaceWarning, workspaceActionLabel, onWorkspaceAction,
   composerKey, workspaceId, workspaceVersion,
   threadListCollapsed = false,
   onToggleThreadList,
@@ -41,10 +39,12 @@ export const Thread: React.FC<ThreadProps> = ({
   onModelChange,
 }) => {
   const { configs } = useConfig();
+  const interrupts = useAgUiInterrupts();
+  const hasInterrupts = interrupts.length > 0;
   const messages=useAuiState(s=>s.thread.messages);
   const isLoading=useAuiState(s=>s.thread.isRunning);
   const last=messages[messages.length-1];
-  const suggestions=last ? fromRuntimeMessage(last).tool_calls?.answer?.suggestions || [] : [];
+  const suggestions=last ? fromRuntimeMessage(last).tool_calls?.presentation?.answer.suggestions || [] : [];
   // 配置动态联动
   const enableWelcome = configs?.welcome_setting?.is_enabled ?? true;
   const greeting = configs?.welcome_setting?.greeting || '你好';
@@ -54,10 +54,7 @@ export const Thread: React.FC<ThreadProps> = ({
     '欢迎使用智能AI问数，您可以向我咨询经营数据、报表分析相关问题。';
 
   // 手工推荐来自开场白配置，与自动常问统计分开。
-  const welcomeQuestions =
-    configs?.welcome_setting?.questions && configs.welcome_setting.questions.length > 0
-      ? configs.welcome_setting.questions
-      : ['各产品线销售情况', '北京的产品线收入情况', '深圳的产品销售情况'];
+  const welcomeQuestions = configs?.welcome_setting?.questions ?? [];
 
   const enableNext = configs?.next_questions?.is_enabled ?? true;
 
@@ -81,7 +78,6 @@ export const Thread: React.FC<ThreadProps> = ({
           <div role="status" className="mx-auto mb-4 flex w-full max-w-3xl items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-foreground">
             <div className="min-w-0 space-y-1">
               <p>{workspaceWarning}</p>
-              {pendingQuestion && <p className="break-words text-xs text-muted-foreground">原问题：{pendingQuestion}</p>}
             </div>
             {workspaceActionLabel && onWorkspaceAction && (
               <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={onWorkspaceAction}>
@@ -110,23 +106,27 @@ export const Thread: React.FC<ThreadProps> = ({
                   {welcomeDesc}
                 </p>
 
-                {/* 4. 你可以这么问我 */}
-                <div className="pt-8 pb-3">
-                  <h3 className="text-base font-bold text-foreground">
-                    你可以这么问我
-                  </h3>
-                </div>
+                {welcomeQuestions.length > 0 && (
+                  <>
+                    {/* 4. 你可以这么问我 */}
+                    <div className="pt-8 pb-3">
+                      <h3 className="text-base font-bold text-foreground">
+                        你可以这么问我
+                      </h3>
+                    </div>
 
-                {/* 5. 胶囊问题列表 (对标截图 2：药丸气泡按钮，微阴影，柔和圆角) */}
-                <div className="flex flex-wrap justify-center gap-3.5 max-w-2xl mx-auto pt-1">
-                  {welcomeQuestions.map((q, idx) => (
-                    <ThreadPrimitive.Suggestion key={idx} prompt={q} send asChild><Button variant="outline"
-                      className="px-6 py-3 rounded-full border-border bg-card text-card-foreground shadow-sm hover:shadow-md hover:border-primary hover:text-primary transition-all transform hover:-translate-y-0.5 active:translate-y-0"
-                    >
-                      {q}
-                    </Button></ThreadPrimitive.Suggestion>
-                  ))}
-                </div>
+                    {/* 5. 胶囊问题列表 (对标截图 2：药丸气泡按钮，微阴影，柔和圆角) */}
+                    <div className="flex flex-wrap justify-center gap-3.5 max-w-2xl mx-auto pt-1">
+                      {welcomeQuestions.map((q, idx) => (
+                        <ThreadPrimitive.Suggestion key={idx} prompt={q} send asChild><Button variant="outline"
+                          className="px-6 py-3 rounded-full border-border bg-card text-card-foreground shadow-sm hover:shadow-md hover:border-primary hover:text-primary transition-all transform hover:-translate-y-0.5 active:translate-y-0"
+                        >
+                          {q}
+                        </Button></ThreadPrimitive.Suggestion>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -171,8 +171,7 @@ export const Thread: React.FC<ThreadProps> = ({
         workspaceId={workspaceId}
         workspaceVersion={workspaceVersion}
         composerKey={composerKey}
-        sendDisabled={sendDisabled}
-        kbIds={kbIds}
+        sendDisabled={sendDisabled || hasInterrupts}
         sourceIds={sourceIds}
         isLoading={isLoading}
         selectedModel={selectedModel}

@@ -1,4 +1,4 @@
-"""One explicit tokenizer for chunking and model budgets."""
+"""Shared tokenizer for model context and tool output budgets."""
 from functools import lru_cache
 import tiktoken
 

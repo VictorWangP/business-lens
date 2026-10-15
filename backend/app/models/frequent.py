@@ -23,7 +23,6 @@ class QuestionRecord(Base):
     message_id: Mapped[str] = mapped_column(String(36), ForeignKey('messages.id', ondelete='CASCADE'), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     scope_key: Mapped[str] = mapped_column(String(64), nullable=False)
-    kb_ids: Mapped[list] = mapped_column(JSON, nullable=False)
     source_ids: Mapped[list] = mapped_column(JSON, nullable=False)
     group_id: Mapped[str | None] = mapped_column(String(36), ForeignKey('question_groups.id', ondelete='SET NULL'), index=True)
     normalized_text: Mapped[str] = mapped_column(Text, nullable=False)

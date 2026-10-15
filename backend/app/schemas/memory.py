@@ -1,5 +1,4 @@
 from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
 
 class UserProfileOut(BaseModel):
@@ -10,17 +9,4 @@ class UserProfileOut(BaseModel):
     confidence: float
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-
-class MemoryFactOut(BaseModel):
-    id: str
-    raw_fact: str
-    subject: Optional[str] = None
-    predicate: Optional[str] = None
-    object: Optional[str] = None
-    source_conversation_id: Optional[str] = None
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
+    model_config = {'from_attributes': True}

@@ -34,10 +34,10 @@ beforeEach(() => {
   requests.length = 0;
   vi.mocked(apiRequest).mockImplementation(async (path:string) => {
     if (path.startsWith('/frequent-questions')) return [{id:'f1', question:'常问问题', count:3, last_asked_at:'2026-10-12T00:00:00Z'}];
-    if (path === '/workspaces') return [{id:'w',name:'默认业务空间',version:1,status:'ready',kb_ids:['kb'],source_ids:[],unavailable_kb_ids:[],unavailable_source_ids:[]}];
+    if (path === '/workspaces') return [{id:'w',name:'默认业务空间',version:1,status:'ready',source_ids:['src'],unavailable_source_ids:[]}];
     if (path === '/sessions') return [{id:'s1',title:'会话一',workspace_id:'w',scope_version:1},{id:'s2',title:'会话二',workspace_id:'w',scope_version:1}];
     if (path.includes('/messages')) return [];
-    if (path === '/knowledge/bases' || path === '/data-sources') return [];
+    if (path === '/data-sources') return [{id:'src',name:'数据源'}];
     return {};
   });
   vi.stubGlobal('fetch',vi.fn(async (_url, options) => {
@@ -63,7 +63,7 @@ async function start() {
   return user;
 }
 
-const data={answer:{version:1,sections:[{title:'销售汇总',summary:'收入增长',query_id:'Q1',show_table:true}],suggestions:['查看成本明细','比较地区差异','查看销售口径']},queries:[{query_id:'q1',citation_id:'Q1',source_name:'销售数据',rows:[{month:'2026-10',revenue:10}],truncated:false,metrics:[{label:'合计收入',value:'10亿'}],chart:{type:'line',title:'月度收入趋势',x_key:'month',y_keys:['revenue'],data:[{month:'2026-10',revenue:10},{month:'2026-11',revenue:20}]}}],citations:[{id:'S1',doc_id:'doc1',doc_name:'销售政策',chunk_index:0,content:'政策原文'}]};
+const data={answer:{version:1,sections:[{title:'销售汇总',summary:'收入增长',query_id:'Q1',show_table:true}],suggestions:['查看成本明细','比较地区差异','查看销售口径']},queries:[{query_id:'q1',citation_id:'Q1',source_name:'销售数据',rows:[{month:'2026-10',revenue:10}],truncated:false,metrics:[{label:'合计收入',value:'10亿'}],chart:{type:'line',title:'月度收入趋势',x_key:'month',y_keys:['revenue'],data:[{month:'2026-10',revenue:10},{month:'2026-11',revenue:20}]}}]};
 async function finish(){
  const input=JSON.parse(requests[0].options.body as string);
  for(const event of [
@@ -75,7 +75,7 @@ async function finish(){
  await act(async()=>requests[0].controller.close());
 }
 describe('official AG-UI runtime and product UI',()=>{
- it('uses standard input and displays native text, exact table, chart, citations and three follow-ups',async()=>{
+ it('uses standard input and displays native text, exact table, chart, query citations and three follow-ups',async()=>{
   const user=await start();const input=JSON.parse(requests[0].options.body as string);
   expect(input.threadId).toBe('s1');expect(input.forwardedProps).toMatchObject({model:'model-a',workspace_id:'w'});
   await push(0,{type:'RUN_STARTED',threadId:'s1',runId:input.runId});await finish();
@@ -84,9 +84,8 @@ describe('official AG-UI runtime and product UI',()=>{
   expect(screen.getAllByText('月度收入趋势')).toHaveLength(1);
   expect(document.querySelector('.recharts-line')).toBeInTheDocument();
   for(const prompt of data.answer.suggestions)expect(screen.getByRole('button',{name:prompt})).toBeVisible();
-  await user.click(screen.getByText('销售政策'));expect(screen.getByRole('dialog',{name:'销售政策'})).toHaveTextContent('政策原文');
  });
- it('preserves all tool operations in a collapsed process without exposing results',async()=>{
+ it('preserves all tool operations in a collapsed process',async()=>{
   const user=await start();const input=JSON.parse(requests[0].options.body as string);
   await push(0,{type:'RUN_STARTED',threadId:'s1',runId:input.runId});
   for(let i=0;i<2;i++)for(const event of [
@@ -95,10 +94,28 @@ describe('official AG-UI runtime and product UI',()=>{
    {type:'TOOL_CALL_END',toolCallId:`t${i}`},
    {type:'TOOL_CALL_RESULT',toolCallId:`t${i}`,messageId:`r${i}`,role:'tool',content:'{"status":"completed"}'}])await push(0,event);
   await finish();const summary=await screen.findByText('分析过程 · 完成');
-  expect(summary.closest('details')).not.toHaveAttribute('open');await user.click(summary);
-  expect(screen.getAllByText('开始执行 · 查询业务数据')).toHaveLength(2);
-  expect(screen.getAllByText('执行结束 · 查询业务数据')).toHaveLength(2);
+  expect(summary.closest('button')).toHaveAttribute('data-state','closed');await user.click(summary);
+  expect(screen.getAllByText(/\d\. 查询业务数据/)).toHaveLength(2);
+  expect(screen.getAllByText('已完成')).toHaveLength(2);
   expect(screen.queryByText('{"status":"completed"}')).not.toBeInTheDocument();
+ });
+ it('shows live dataset and SQL details and keeps them after completion',async()=>{
+  const user=await start();const input=JSON.parse(requests[0].options.body as string);
+  await push(0,{type:'RUN_STARTED',threadId:'s1',runId:input.runId});
+  await push(0,{type:'TOOL_CALL_START',toolCallId:'sql-live',toolCallName:'execute_readonly_sql',parentMessageId:'a0'});
+  await push(0,{type:'TOOL_CALL_ARGS',toolCallId:'sql-live',delta:JSON.stringify({source_id:'sales',sql:'SELECT SUM(revenue) FROM dataset'})});
+  await push(0,{type:'TOOL_CALL_END',toolCallId:'sql-live'});
+  await user.click(await screen.findByText('分析过程 · 运行中'));
+  expect(await screen.findByText('SELECT SUM(revenue) FROM dataset')).toBeVisible();
+  expect(screen.getByText('执行中')).toBeVisible();
+  expect(screen.getByText(/处理说明：按下方 SQL/)).toBeVisible();
+  await push(0,{type:'TOOL_CALL_RESULT',toolCallId:'sql-live',messageId:'sql-result',role:'tool',content:JSON.stringify({status:'completed',source_name:'销售业务数据集',row_count:1,sql:'SELECT SUM(revenue) FROM dataset LIMIT 500'})});
+  expect(await screen.findByText('业务数据集：销售业务数据集')).toBeVisible();
+  expect(screen.getByText('查询结果：返回 1 行')).toBeVisible();
+  await finish();
+  expect(await screen.findByText('分析过程 · 完成')).toBeVisible();
+  expect(screen.getByText('业务数据集：销售业务数据集')).toBeVisible();
+  expect(screen.getByText('SELECT SUM(revenue) FROM dataset LIMIT 500')).toBeVisible();
  });
  it('sends a follow-up through the native runtime',async()=>{
   const user=await start();const input=JSON.parse(requests[0].options.body as string);
@@ -167,5 +184,43 @@ describe('official runtime durable recovery',()=>{
     await waitFor(()=>expect(requests).toHaveLength(2));
     expect(screen.getByText('汇总销售')).toBeVisible();
     expect(screen.getByText('修改后的销售问题')).toBeVisible();
+  });
+});
+
+describe('stable thread lifecycle', () => {
+  it('promotes a draft without reloading its history or losing the published answer', async () => {
+    const original = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path, ...args) =>
+      path === '/sessions' ? [] : original!(path, ...args));
+    const user = userEvent.setup();
+    render(<AppContent />);
+    await waitFor(() => expect(screen.getByRole('button', {name:'发送问题'})).not.toBeDisabled());
+    await user.type(screen.getByRole('textbox', {name:'输入问题'}), '汇总销售');
+    await user.click(screen.getByRole('button', {name:'发送问题'}));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    const first = JSON.parse(requests[0].options.body as string);
+    await push(0, {type:'RUN_STARTED', threadId:first.threadId, runId:first.runId});
+    await finish();
+    expect(await screen.findByText('收入增长')).toBeVisible();
+    expect(vi.mocked(apiRequest).mock.calls.some(([path]) => path === `/sessions/${first.threadId}/messages`)).toBe(false);
+    await user.click(screen.getByRole('button', {name:'查看成本明细'}));
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(JSON.parse(requests[1].options.body as string).threadId).toBe(first.threadId);
+  });
+
+  it('waits for creation before cancelling once, without polling an unknown run', async () => {
+    let acknowledge!: (response:Response) => void;
+    let response!: Response;
+    vi.stubGlobal('fetch', vi.fn((_url, options:RequestInit) => {
+      const stream = new ReadableStream<Uint8Array>({start(controller) {requests.push({controller, options});}});
+      response = new Response(stream, {headers:{'Content-Type':'text/event-stream', 'X-Run-Id':'created-run'}});
+      return new Promise<Response>(resolve => {acknowledge = resolve;});
+    }));
+    const user = await start();
+    await user.click(screen.getByRole('button', {name:'停止生成'}));
+    expect(vi.mocked(apiRequest).mock.calls.some(([path]) => path.includes('/cancel'))).toBe(false);
+    await act(async () => {acknowledge(response);});
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/runs/created-run/cancel', {method:'POST'}));
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path.includes('/cancel'))).toHaveLength(1);
   });
 });

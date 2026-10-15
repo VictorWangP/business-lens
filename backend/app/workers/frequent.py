@@ -1,7 +1,9 @@
-"""Single local process: python -m app.workers.frequent (independent of ingestion)."""
+"""Sequential frequent-question consumer; also supports a standalone entry point."""
 import asyncio
+from contextlib import contextmanager
 import fcntl
 import logging
+from openai import AuthenticationError, PermissionDeniedError
 from sqlalchemy import select, update
 from app.config import settings
 from app.database import AsyncSessionLocal, engine
@@ -33,7 +35,7 @@ async def process(message_id):
                     QuestionRecord.error_code == service.PROFILE_CHANGED).limit(1)):
                 return
             message = await db.get(Message, message_id)
-            if not message or not (await service.config(db, record.user_id))[0] or not await service.valid_scope(db, record.user_id, record.kb_ids, record.source_ids):
+            if not message or not (await service.config(db, record.user_id))[0] or not await service.valid_scope(db, record.user_id, record.source_ids):
                 record.status, record.error_code = 'skipped', 'disabled_or_invalid_scope'
                 await db.commit()
                 return
@@ -93,7 +95,7 @@ async def process(message_id):
             if not locked.rowcount:
                 return
             record = await db.get(QuestionRecord, message_id)
-            if not await db.get(Message, message_id) or not (await service.config(db, user_id))[0] or not await service.valid_scope(db, user_id, record.kb_ids, record.source_ids):
+            if not await db.get(Message, message_id) or not (await service.config(db, user_id))[0] or not await service.valid_scope(db, user_id, record.source_ids):
                 record.status, record.error_code = 'skipped', 'disabled_or_invalid_scope'
             elif (await EmbeddingProvider.for_user(db, user_id)).profile != provider.profile:
                 record.status, record.error_code = 'pending', service.PROFILE_CHANGED
@@ -116,10 +118,13 @@ async def process(message_id):
             await db.commit()
     except Exception as exc:
         logger.warning('Frequent question failed: message=%s category=%s', message_id, type(exc).__name__)
+        unauthorized = isinstance(exc, (AuthenticationError, PermissionDeniedError))
+        if unauthorized:
+            logger.warning('常问统计模型认证或权限不足，本条任务不再自动重试；请检查对话和嵌入模型的 API Key、Base URL、模型 ID 及工作空间授权')
         async with AsyncSessionLocal() as db:
             record = await db.get(QuestionRecord, message_id)
             if record and record.status == 'processing':
-                record.status = 'failed' if record.attempts >= service.MAX_ATTEMPTS else 'pending'
+                record.status = 'failed' if unauthorized or record.attempts >= service.MAX_ATTEMPTS else 'pending'
                 # Never persist provider credentials, question contents or raw errors.
                 record.error_code = type(exc).__name__[:80]
                 await db.commit()
@@ -132,7 +137,8 @@ async def pending_ids():
             QuestionRecord.user_id.not_in(paused)).order_by(QuestionRecord.created_at, QuestionRecord.message_id).limit(20))).all())
 
 
-async def run():
+@contextmanager
+def worker_lock():
     # Shared local storage ensures a second local/container worker fails before recovery.
     settings.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     with (settings.STORAGE_DIR / 'frequent-worker.lock').open('a') as lock:
@@ -140,12 +146,22 @@ async def run():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise RuntimeError('常问 worker 已运行；基础版只允许单实例') from exc
+        yield
+
+
+async def run_frequent_worker():
+    """Caller holds worker_lock and owns the shared database engine lifecycle."""
+    await recover()
+    while True:
+        for message_id in await pending_ids():
+            await process(message_id)
+        await asyncio.sleep(3)
+
+
+async def run():
+    with worker_lock():
         try:
-            await recover()
-            while True:
-                for message_id in await pending_ids():
-                    await process(message_id)
-                await asyncio.sleep(3)
+            await run_frequent_worker()
         finally:
             await engine.dispose()
 

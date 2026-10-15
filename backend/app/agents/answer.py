@@ -53,6 +53,40 @@ class FinalAnswer(BaseModel):
         return items
 
 
+class ChartConfig(BaseModel):
+    type: Literal['bar', 'line', 'pie']
+    title: str
+    x_key: str
+    y_keys: list[str]
+    data: list[dict]
+
+
+class MetricCard(BaseModel):
+    label: str
+    value: str
+
+
+class QueryEvidence(BaseModel):
+    """Public SQL evidence whitelist shared by delivery, archive and feedback."""
+    query_id: str
+    citation_id: str
+    source_id: str = ''
+    source_name: str = ''
+    retrieved_at: str = ''
+    sql: str = ''
+    parameters: dict = Field(default_factory=dict)
+    rows: list[dict]
+    truncated: bool
+    chart: ChartConfig | None = None
+    metrics: list[MetricCard] = Field(default_factory=list)
+
+
+class BusinessPresentation(BaseModel):
+    answer: FinalAnswer
+    queries: list[QueryEvidence]
+    operations: list[dict] = Field(default_factory=list)
+
+
 class SuggestedAnswer(FinalAnswer):
     suggestions: list[str] = Field(min_length=3, max_length=3)
 
@@ -66,10 +100,19 @@ def requests_code(query: str) -> bool:
         re.search(r'(?:不要|无需|不用|不需要|不必|别).{0,12}(?:代码|教程|指南)', query))
 
 
-def parse_answer(raw: str, *, enabled: bool, allow_code: bool, queries: list[dict], citations: dict) -> FinalAnswer:
+def parse_answer(raw: str, *, enabled: bool, allow_code: bool, queries: list[dict]) -> FinalAnswer:
     try:
         answer = FinalAnswer.model_validate_json(raw)
-        known_queries = {q['citation_id'] for q in queries}
+        id_map = {q['query_id']: q['citation_id'] for q in queries if q.get('query_id') and q.get('citation_id')}
+        for section in answer.sections:
+            if section.query_id and section.query_id in id_map:
+                section.query_id = id_map[section.query_id]
+            for uuid_id, cit_id in id_map.items():
+                if uuid_id in section.summary:
+                    section.summary = section.summary.replace(f'[查询 {uuid_id}]', f'[查询 {cit_id}]')
+
+        known_queries = {q['citation_id'] for q in queries if q.get('citation_id')}
+        known_queries.update(q['query_id'] for q in queries if q.get('query_id'))
         for section in answer.sections:
             section.title = re.sub(r'^\d+[.、．)]\s*', '', section.title.strip())
             title_tokens = markdown.parse(section.title)
@@ -86,9 +129,8 @@ def parse_answer(raw: str, *, enabled: bool, allow_code: bool, queries: list[dic
             for ref in re.findall(r'\[查询\s+([^\]]+)\]', section.summary):
                 if ref.strip() not in known_queries:
                     raise ValueError('回答包含未执行的业务查询引用')
-            for ref in re.findall(r'\[来源\s+([^\]]+)\]', section.summary):
-                if ref.strip() not in citations:
-                    raise ValueError('回答包含未检索到的来源引用')
+            if re.search(r'\[来源\s+[^\]]+\]', section.summary):
+                raise ValueError('仅支持实际 SQL 查询引用')
         answer.suggestions = [item.strip() for item in answer.suggestions]
         expected = 3 if enabled else 0
         if len(answer.suggestions) != expected or any(not item or len(item) > 200 or '\n' in item or '`' in item for item in answer.suggestions) or len(set(answer.suggestions)) != expected:

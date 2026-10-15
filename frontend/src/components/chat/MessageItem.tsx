@@ -1,38 +1,30 @@
 import {BusinessAnswerPart} from './BusinessAnswerPart';
 import { FeedbackButton } from '../feedback/FeedbackButton';
 import React, { useState } from 'react';
+import type { Message } from '../../types/chat';
 import {
   Bot,
   User as UserIcon,
   Copy,
   Check,
   Volume2,
-  FileText,
   Bookmark,
   Pencil,
   RotateCcw
 } from 'lucide-react';
-import { Message, CitationItem } from '../../types/chat';
 import { useConfig } from '../../context/ConfigContext';
 import { useBookmarks } from '../../context/BookmarkContext';
-import { apiRequest, downloadDocument } from '../../services/api';
+import { apiRequest } from '../../services/api';
 import { toast } from 'sonner';
+import { AnalysisProcess } from './AnalysisProcess';
 import { WorkingIndicator } from './WorkingIndicator';
 import { MessagePrimitive, ActionBarPrimitive, ComposerPrimitive, ThreadPrimitive, useAui, useAuiState } from '@assistant-ui/react';
 import { Button } from '../ui/button';
 import { Avatar, AvatarFallback } from '../ui/avatar';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
 import { MarkdownText } from './MarkdownContent';
-
-const analysisActionLabels: Record<string, string> = {
-  search_knowledge: '检索知识库', read_document_section: '读取文档内容',
-  get_business_schema: '读取业务字段', query_metrics: '查询业务指标',
-  execute_readonly_sql: '查询业务数据', ask_clarification:'确认业务条件', list_available_resources: '确认可用资源',
-};
-const runStatusLabels: Record<string, string> = {
-  queued: '排队中', running: '运行中', cancel_requested: '正在停止', completed: '完成',
-  partial: '部分完成', failed: '执行失败', cancelled: '已停止',
-};
+import { QueryCitationContext } from './QueryCitationContext';
+import { QueryCitationBadge } from './QueryCitationBadge';
+import type { QueryEvidence } from '../../types/chat';
 
 interface MessageItemProps {
   message: Message;
@@ -47,12 +39,43 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, isWorking = f
   const isEditing = useAuiState(s => s.composer.isEditing);
   const isSpeaking = useAuiState(s => s.message.speech != null);
   const enableTTS = configs?.voice_tts?.is_enabled ?? false;
-  const [activeCitation, setActiveCitation] = useState<CitationItem | null>(null);
+
+  const queries = React.useMemo<QueryEvidence[]>(() => {
+    if (message.tool_calls?.presentation?.queries?.length) {
+      return message.tool_calls.presentation.queries;
+    }
+    const events = message.tool_calls?.execution_events || [];
+    const list: QueryEvidence[] = [];
+    events.forEach(e => {
+      if (e.result?.source_name || e.result?.sql) {
+        list.push({
+          query_id: e.tool_id || '',
+          citation_id: (e.result as { citation_id?: string })?.citation_id || (e.tool_id ? `Q${e.tool_id}` : ''),
+          source_name: e.result?.source_name || '业务数据',
+          rows: [],
+          truncated: Boolean(e.result?.truncated),
+          sql: e.result?.sql,
+        });
+      }
+    });
+    return list;
+  }, [message]);
+
+  const uniqueQueries = React.useMemo(() => {
+    const seen = new Set<string>();
+    const list: QueryEvidence[] = [];
+    for (const q of queries) {
+      const key = q.source_name || q.citation_id || q.query_id;
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        list.push(q);
+      }
+    }
+    return list;
+  }, [queries]);
 
   const isUser = message.role === 'user';
   const bookmarked = isBookmarked(message.content);
-  const executionEvents = message.execution_events || [];
-  const runStatus = message.tool_calls?.status || '';
 
   const handleToggleBookmark = async () => {
     await toggleBookmark(message.content);
@@ -67,11 +90,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, isWorking = f
         {/* 消息主体 */}
         <div className="flex-1 min-w-0 space-y-2">
           {/* 角色与时间 */}
-          <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">
-              {isUser ? '我' : '智能问数助手'}
-            </span>
-          </div>
+          {!isUser && (
+            <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">
+                智能问数助手
+              </span>
+            </div>
+          )}
 
           {/* 消息框 */}
           <div
@@ -101,45 +126,19 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, isWorking = f
                 {message.content}
               </div>
             ) : (
-              <MessagePrimitive.Parts components={{ Text: MarkdownText, data:{by_name:{"agui-activity/business-answer":BusinessAnswerPart},Fallback:()=>null}, tools:{Fallback:()=>null} }} />
-            )}
-
-            {!isUser && <MessagePrimitive.Error><p role="alert" className="mt-2 text-destructive">执行未完成，请检查模型或数据配置后重试。</p></MessagePrimitive.Error>}
-            {!isUser && isWorking && <WorkingIndicator message={message} />}
-            {!isUser && !isWorking && (executionEvents.length > 0 || message.tool_calls?.run_id || message.tool_calls?.query_results?.length || runStatus) && (
-              <details className="mt-2 text-xs text-muted-foreground">
-                <summary className="w-fit cursor-pointer select-none hover:text-foreground">
-                  分析过程
-                  {runStatus in runStatusLabels ? ` · ${runStatusLabels[runStatus]}` : ''}
-                </summary>
-                {executionEvents.length > 0 && <ol className="mt-2 space-y-1 pl-4">
-                  {executionEvents.map((event, index) => (
-                    <li key={index}>{event.type === 'tool_start' ? '开始执行' : '执行结束'} · {analysisActionLabels[event.name || ''] || event.name}</li>
-                  ))}
-                </ol>}
-                {runStatus && <p className="mt-2">执行状态：{runStatusLabels[runStatus] || runStatus}</p>}
-              </details>
-            )}
-            {/* 知识库引用来源卡片 */}
-            {message.citations && message.citations.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-border">
-                <div className="text-xs font-semibold text-muted-foreground mb-2 flex items-center space-x-1">
-                  <FileText className="w-3.5 h-3.5 text-primary" />
-                  <span>知识库溯源引用 ({message.citations.length} 处)</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {message.citations.map((cite, idx) => (
-                    <Button variant="ghost"
-                      key={idx}
-                      onClick={() => setActiveCitation(cite)}
-                      className="px-2.5 py-1 rounded-lg border border-border bg-muted/50 text-xs text-muted-foreground hover:border-primary hover:text-foreground transition flex items-center space-x-1"
-                    >
-                      <span className="text-blue-500 font-bold">[{cite.id}]</span>
-                      <span className="truncate max-w-[140px]">{cite.doc_name}</span>
-                    </Button>
-                  ))}
-                </div>
-              </div>
+              <>
+                <AnalysisProcess message={message} isWorking={isWorking} />
+                {isWorking && <WorkingIndicator message={message} />}
+                <MessagePrimitive.Error><p role="alert" className="mt-2 text-destructive">执行未完成，请检查模型或数据配置后重试。</p></MessagePrimitive.Error>
+                <QueryCitationContext.Provider value={queries}>
+                  <MessagePrimitive.Parts components={{ Text: MarkdownText, data:{by_name:{"agui-activity/business-answer":BusinessAnswerPart},Fallback:()=>null}, tools:{Fallback:()=>null} }} />
+                </QueryCitationContext.Provider>
+                {!isWorking && uniqueQueries.length > 0 && (
+                  <div className="mt-3.5 pt-2.5 border-t border-border/50 text-xs text-muted-foreground">
+                    <span>数据来源：{uniqueQueries.map(q => q.source_name || '业务数据').filter(Boolean).join('、')}</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -147,77 +146,110 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, isWorking = f
           {isUser && !isEditing && (
             <div className="flex items-center justify-end space-x-1 pt-0.5">
               {/* 1. 收藏 */}
-              <Button variant="ghost"
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={handleToggleBookmark}
-                title={bookmarked ? '已收藏（点击取消）' : '收藏提问'}
-                className={`px-2 py-1 rounded-md transition flex items-center space-x-1 text-xs ${
+                title={bookmarked ? '已收藏（点击取消）' : '收藏'}
+                aria-label={bookmarked ? '已收藏' : '收藏'}
+                className={`h-7 w-7 p-0 rounded-md transition flex items-center justify-center ${
                   bookmarked
                     ? 'text-amber-500 bg-amber-500/10 hover:bg-amber-500/20'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent'
                 }`}
               >
                 <Bookmark className={`w-3.5 h-3.5 ${bookmarked ? 'fill-amber-400 text-amber-500' : ''}`} />
-                <span className="text-[11px] font-medium">{bookmarked ? '已收藏' : '收藏'}</span>
               </Button>
 
-              <ActionBarPrimitive.Edit asChild><Button variant="ghost" size="sm" title="编辑问题"><Pencil className="w-3.5 h-3.5" /><span>编辑</span></Button></ActionBarPrimitive.Edit>
+              {/* 2. 编辑 */}
+              <ActionBarPrimitive.Edit asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="编辑问题"
+                  aria-label="编辑问题"
+                  className="h-7 w-7 p-0 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition flex items-center justify-center"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </Button>
+              </ActionBarPrimitive.Edit>
 
               {/* 3. 重新发送 */}
-              <ThreadPrimitive.Suggestion prompt={message.content} send asChild><Button variant="ghost"
-                title="重新发送此提问"
-                className="px-2 py-1 rounded-md text-muted-foreground hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-accent transition flex items-center space-x-1 text-xs"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-medium">重新发送</span>
-              </Button>
-
+              <ThreadPrimitive.Suggestion prompt={message.content} send asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="重新发送"
+                  aria-label="重新发送此提问"
+                  className="h-7 w-7 p-0 rounded-md text-muted-foreground hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-accent transition flex items-center justify-center"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </Button>
               </ThreadPrimitive.Suggestion>
+
               {/* 4. 复制 */}
-              <ActionBarPrimitive.Copy asChild><Button variant="ghost"
-                title="复制问题内容"
-                className="px-2 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition flex items-center space-x-1 text-xs"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                <span className="text-[11px] font-medium">{copied ? '已复制' : '复制'}</span>
-              </Button>
+              <ActionBarPrimitive.Copy asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title={copied ? '已复制' : '复制'}
+                  aria-label="复制问题内容"
+                  className="h-7 w-7 p-0 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition flex items-center justify-center"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                </Button>
               </ActionBarPrimitive.Copy>
             </div>
           )}
 
-          {/* 助手消息底部操作工具栏 (复制、语音朗读 TTS) */}
+          {/* 助手消息底部操作工具栏 (复制、反馈、语音朗读 TTS) */}
           {!isUser && !isWorking && (
             <div className="flex items-center space-x-1 pt-0.5">
-              <ActionBarPrimitive.Root><ActionBarPrimitive.Copy asChild>
-                <Button variant="ghost" size="icon" aria-label="复制回答"><Copy /></Button>
-              </ActionBarPrimitive.Copy></ActionBarPrimitive.Root>
+              <ActionBarPrimitive.Root>
+                <ActionBarPrimitive.Copy asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="复制"
+                    aria-label="复制回答"
+                    className="h-7 w-7 p-0 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition flex items-center justify-center"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                </ActionBarPrimitive.Copy>
+              </ActionBarPrimitive.Root>
 
               <FeedbackButton message={message} />
 
-              {enableTTS && (isSpeaking
-                ? <ActionBarPrimitive.StopSpeaking asChild><Button variant="ghost" size="sm" aria-label="停止朗读"><Volume2 />停止朗读</Button></ActionBarPrimitive.StopSpeaking>
-                : <ActionBarPrimitive.Speak asChild><Button variant="ghost" size="sm" aria-label="朗读回答"><Volume2 />朗读</Button></ActionBarPrimitive.Speak>)}
+              {enableTTS && (isSpeaking ? (
+                <ActionBarPrimitive.StopSpeaking asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="停止朗读"
+                    aria-label="停止朗读"
+                    className="h-7 w-7 p-0 rounded-md text-primary hover:bg-accent transition flex items-center justify-center"
+                  >
+                    <Volume2 className="w-3.5 h-3.5 animate-pulse" />
+                  </Button>
+                </ActionBarPrimitive.StopSpeaking>
+              ) : (
+                <ActionBarPrimitive.Speak asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="朗读"
+                    aria-label="朗读回答"
+                    className="h-7 w-7 p-0 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition flex items-center justify-center"
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                  </Button>
+                </ActionBarPrimitive.Speak>
+              ))}
             </div>
           )}
         </div>
       </div>
-
-
-      {/* 引用来源详情弹窗抽屉 */}
-      <Dialog open={!!activeCitation} onOpenChange={open => { if (!open) setActiveCitation(null); }}>
-        <DialogContent className="max-w-2xl max-h-[85dvh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{activeCitation?.doc_name}</DialogTitle>
-            <DialogDescription>来源 {activeCitation?.id} · 切片 {activeCitation?.chunk_index}
-              {activeCitation?.pages?.length ? ` · 第 ${activeCitation.pages.join('、')} 页` : ''}
-              {activeCitation?.version ? ` · 版本 ${activeCitation.version.slice(0,8)}` : ''}</DialogDescription></DialogHeader>
-          {activeCitation?.retrieval_warning && <p className="text-sm text-amber-700 dark:text-amber-400">{activeCitation.retrieval_warning}</p>}
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">{activeCitation?.headings?.join(' / ')}{activeCitation?.headings?.length ? '\n\n' : ''}{activeCitation?.content}</div>
-          <DialogFooter><Button variant="outline" onClick={async () => {
-            if (!activeCitation) return;
-            try { await downloadDocument(activeCitation.doc_id, activeCitation.doc_name); }
-            catch (e) { toast.error(e instanceof Error ? e.message : '下载失败'); }
-          }}>下载原件</Button><Button onClick={() => setActiveCitation(null)}>关闭</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
     </MessagePrimitive.Root>
   );
 };

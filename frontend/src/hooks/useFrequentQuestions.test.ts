@@ -10,18 +10,18 @@ it('clears old scope immediately and ignores late responses after a resource swi
   let resolveOld: (value: typeof row[]) => void;
   vi.mocked(apiRequest).mockImplementationOnce(() => new Promise(resolve => {resolveOld=resolve;}));
   vi.mocked(apiRequest).mockResolvedValueOnce([{...row,id:'new'}]);
-  const {result,rerender} = renderHook(({kb}) => useFrequentQuestions(kb,[],true,3,false), {initialProps:{kb:['a']}});
+  const {result,rerender} = renderHook(({kb}) => useFrequentQuestions(kb,true,3,false), {initialProps:{kb:['a']}});
   rerender({kb:['b']});
   expect(result.current).toEqual([]);
   await waitFor(() => expect(result.current[0]?.id).toBe('new'));
   await act(async () => {resolveOld([row]);});
   expect(result.current[0].id).toBe('new');
-  expect(apiRequest).toHaveBeenLastCalledWith('/frequent-questions?kb_ids=b',expect.anything());
+  expect(apiRequest).toHaveBeenLastCalledWith('/frequent-questions?source_ids=b',expect.anything());
 });
 
 it('refreshes every five seconds, on answer completion and threshold changes; stops when disabled', async () => {
   vi.useFakeTimers(); vi.mocked(apiRequest).mockResolvedValue([row]);
-  const {result,rerender,unmount} = renderHook(({enabled,loading,threshold}) => useFrequentQuestions([],[],enabled,threshold,loading),
+  const {result,rerender,unmount} = renderHook(({enabled,loading,threshold}) => useFrequentQuestions([],enabled,threshold,loading),
     {initialProps:{enabled:true,loading:true,threshold:3}});
   await act(async () => {});
   expect(result.current).toEqual([row]);

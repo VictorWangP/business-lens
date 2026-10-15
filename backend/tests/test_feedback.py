@@ -1,5 +1,6 @@
 import asyncio
 import json
+import uuid
 from datetime import datetime, timedelta
 import httpx
 import pytest
@@ -17,7 +18,7 @@ def auth(uid):
     return {'Authorization':'Bearer ' + create_access_token({'sub':uid})}
 
 
-async def seed(status='completed', legacy=False):
+async def seed(status='completed'):
     async with AsyncSessionLocal() as db:
         a=User(username='张经理',hashed_password='unused')
         b=User(username='李经理',hashed_password='unused')
@@ -28,16 +29,14 @@ async def seed(status='completed', legacy=False):
         conv=Conversation(user_id=a.id,workspace_id=workspace.id)
         db.add(conv);await db.flush()
         question=Message(user_id=a.id,conversation_id=conv.id,role='user',content='本月应收账款账龄 30%_？',created_at=datetime.utcnow()-timedelta(seconds=2))
-        answer=Message(user_id=a.id,conversation_id=conv.id,role='assistant',content='本月应收账款主要集中在 30–60 天。',
-                       citations=json.dumps([{'id':'D1','doc_id':'d','doc_name':'账龄定义','chunk_index':0,'content':'统计口径','api_key':'DO-NOT-COPY'}]))
+        answer=Message(user_id=a.id,conversation_id=conv.id,role='assistant',content='本月应收账款主要集中在 30–60 天。')
         db.add_all([question,answer]);await db.flush()
         run=None
-        if not legacy:
-            run=AgentRun(user_id=a.id,conversation_id=conv.id,workspace_id=workspace.id,assistant_message_id=answer.id,status=status,model='test-model',
-                input_payload={'user_message_id':question.id,'history':[{'role':'user','content':'上一轮问题','secret':'DO-NOT-COPY'}],'memory':'DO-NOT-COPY','api_key':'DO-NOT-COPY'},resource_scope={'kb_ids':[],'source_ids':[]})
-            db.add(run);await db.flush()
-            answer.tool_calls=json.dumps({'run_id':run.id,'status':status,'api_key':'DO-NOT-COPY','execution_events':[{'message':'DO-NOT-COPY'}],
-                'query_results':[{'query_id':'Q1','rows':[{'amount':1200}],'sql':'SELECT amount FROM aging','truncated':True,'parameters':{},'connection_secret':'DO-NOT-COPY'}]})
+        run=AgentRun(user_id=a.id,conversation_id=conv.id,workspace_id=workspace.id,assistant_message_id=answer.id,status=status,model='test-model',
+            input_payload={'user_message_id':question.id,'memory':'DO-NOT-COPY','api_key':'DO-NOT-COPY'},resource_scope={'source_ids':[]})
+        db.add(run);await db.flush()
+        answer.tool_calls=json.dumps({'run_id':run.id,'status':status,'api_key':'DO-NOT-COPY','execution_events':[{'message':'DO-NOT-COPY'}],
+            'presentation':{'answer':{'version':1,'sections':[{'title':'账龄','summary':'主要集中在 30–60 天。'}],'suggestions':[]},'queries':[{'query_id':'q1','citation_id':'Q1','rows':[{'amount':1200}],'sql':'SELECT amount FROM aging','truncated':True,'parameters':{},'connection_secret':'DO-NOT-COPY'}]}})
         await db.commit()
         return a.id,b.id,admin.id,conv.id,question.id,answer.id,run.id if run else None
 
@@ -63,7 +62,8 @@ async def test_full_review_loop_and_private_responses():
         assert detail['user_comment']=='请核查金额'
         assert detail['evidence_snapshot']['context']['question_message_id']==q
         assert 'DO-NOT-COPY' not in json.dumps(detail)
-        assert detail['evidence_snapshot']['execution']['queries'][0]['truncated'] is True
+        assert detail['evidence_snapshot']['schema_version']==2
+        assert detail['evidence_snapshot']['presentation']['queries'][0]['truncated'] is True
         assert detail['created_at'].endswith('Z')
         invalid=await cli.patch(f'/api/feedback/{fid}',headers=auth(admin),json={'status':'resolved','processing_note':'  ','expected_version':1})
         assert invalid.status_code==422
@@ -78,8 +78,9 @@ async def test_full_review_loop_and_private_responses():
         assert invalid.status_code==422
         reopened=await cli.patch(f'/api/feedback/{fid}',headers=auth(admin),json={'status':'pending','processing_note':'回归仍有误，重新核查','expected_version':2})
         assert reopened.json()['history'][-1]['action']=='reopened'
-        summaries=(await cli.get(f'/api/sessions/{c}/feedback',headers=auth(a))).json()
-        assert summaries[0]['status']=='pending' and 'processing_note' not in summaries[0]
+        context=(await cli.get(f'/api/sessions/{c}/feedback-context',headers=auth(a))).json()
+        assert context['items'][0]['feedback']['status']=='pending'
+        assert 'processing_note' not in json.dumps(context)
 
 
 @pytest.mark.asyncio
@@ -93,7 +94,7 @@ async def test_authorization_and_forged_fields():
         for path in ['/api/feedback',f'/api/feedback/{fid}']:
             assert (await cli.get(path,headers=auth(a))).status_code==403
         assert (await cli.patch(f'/api/feedback/{fid}',headers=auth(a),json={'status':'resolved','processing_note':'越权','expected_version':1})).status_code==403
-        assert (await cli.get(f'/api/sessions/{c}/feedback',headers=auth(b))).status_code==404
+        assert (await cli.get(f'/api/sessions/{c}/feedback-context',headers=auth(b))).status_code==404
         assert (await cli.get(f'/api/sessions/{c}',headers=auth(admin))).status_code==404
         assert (await cli.get(f'/api/runs/{r}',headers=auth(admin))).status_code==404
         me=(await cli.get('/api/auth/me',headers=auth(admin))).json()
@@ -131,7 +132,7 @@ async def test_ineligible_runs(status):
 
 
 @pytest.mark.asyncio
-async def test_partial_and_legacy_pairing():
+async def test_partial_run_uses_explicit_question_link():
     a,b,admin,c,q,m,r=await seed(status='partial')
     async with AsyncSessionLocal() as db:
         # An extra question after the original run must not replace its explicit input link.
@@ -145,15 +146,22 @@ async def test_partial_and_legacy_pairing():
 
 
 @pytest.mark.asyncio
-async def test_legacy_ambiguous_and_evidence_limit(monkeypatch):
-    a,b,admin,c,q,m,r=await seed(legacy=True)
+async def test_unlinked_reply_rejected_and_evidence_limit(monkeypatch):
+    a,b,admin,c,q,m,r=await seed()
     async with client() as cli:
         async with AsyncSessionLocal() as db:
-            answer=await db.get(Message,m);question=await db.get(Message,q)
-            question.created_at=answer.created_at;await db.commit()
+            await db.execute(delete(AgentRun).where(AgentRun.id==r))
+            await db.commit()
         assert (await cli.post(f'/api/messages/{m}/feedback',headers=auth(a),json={'reason':'data_error'})).status_code==422
         async with AsyncSessionLocal() as db:
-            question=await db.get(Message,q);question.created_at-=timedelta(seconds=1);await db.commit()
+            await db.execute(delete(User))
+            await db.commit()
+        a,b,admin,c,q,m,r=await seed()
+        async with AsyncSessionLocal() as db:
+            answer=await db.get(Message,m)
+            calls=json.loads(answer.tool_calls)
+            calls['presentation']['answer']['sections'][0]['summary']='扩大快照'
+            answer.tool_calls=json.dumps(calls);await db.commit()
         from app.services import feedback_service
         monkeypatch.setattr(feedback_service,'MAX_EVIDENCE_BYTES',10)
         assert (await cli.post(f'/api/messages/{m}/feedback',headers=auth(a),json={'reason':'data_error'})).status_code==413
@@ -215,16 +223,16 @@ async def test_snapshot_uses_original_run_scope_and_stays_immutable():
     a,b,admin,c,q,m,r=await seed()
     async with AsyncSessionLocal() as db:
         run=await db.get(AgentRun,r)
-        run.resource_scope={'kb_ids':['historical-kb'],'source_ids':['historical-source']}
+        run.resource_scope={'source_ids':['historical-source']}
         conv=await db.get(Conversation,c)
-        conv.kb_ids='["new-kb"]';conv.scope_version=2
+        conv.scope_version=2
         await db.commit()
     async with client() as cli:
         fid=(await cli.post(f'/api/messages/{m}/feedback',headers=auth(a),json={'reason':'data_error'})).json()['id']
         async with AsyncSessionLocal() as db:
             answer=await db.get(Message,m);answer.content='之后修改的正文';await db.commit()
         detail=(await cli.get(f'/api/feedback/{fid}',headers=auth(admin))).json()
-        assert detail['evidence_snapshot']['resource']['kb_ids']==['historical-kb']
+        assert detail['evidence_snapshot']['resource']['source_ids']==['historical-source']
         assert detail['evidence_snapshot']['resource']['scope_version']==0
         assert detail['evidence_snapshot']['answer']['content']!='之后修改的正文'
 

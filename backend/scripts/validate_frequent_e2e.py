@@ -54,7 +54,7 @@ async def validate(args, model_value, temp):
     from app.models.config import AppConfig
     from app.models.conversation import Message
     from app.models.frequent import QuestionRecord, QuestionGroup
-    from app.models.knowledge import KnowledgeBase
+    from app.models.platform import DataSource
     from app.security.auth import create_access_token
     from main import app
     report = {'llm_model': model_value['default_model'], 'embedding_model': model_value['default_embedding_model'], 'isolation': 'temporary migrated SQLite database; existing application data unchanged', 'checks': [], 'chats': []}
@@ -91,25 +91,24 @@ async def validate(args, model_value, temp):
             await db.flush()
             db.add(AppConfig(user_id=user.id, config_key='model_setting', config_value=json.dumps(model_value)))
             db.add(AppConfig(user_id=user.id, config_key='frequent_questions', config_value='{"threshold":3}'))
-            kb = KnowledgeBase(user_id=user.id, name='scope-validation-empty-kb')
-            db.add(kb)
+            ds1 = DataSource(user_id=user.id, name='scope-ds1', connection_secret='unused')
+            ds2 = DataSource(user_id=user.id, name='scope-ds2', connection_secret='unused')
+            db.add_all([ds1, ds2])
             await db.commit()
-            uid, other_id, kbid = (user.id, other.id, kb.id)
+            uid, other_id, ds1_id, ds2_id = (user.id, other.id, ds1.id, ds2.id)
         headers = {'Authorization': 'Bearer ' + create_access_token({'sub': uid})}
         other_headers = {'Authorization': 'Bearer ' + create_access_token({'sub': other_id})}
         worker = start_worker()
         async with app.router.lifespan_context(app), agent_worker():
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', timeout=240) as client:
-                baseline_kb = await client.post('/api/knowledge/bases', headers=headers, json={'name': 'baseline-validation-empty-kb'})
-                baseline_kb.raise_for_status()
-                base_space = await client.post('/api/workspaces', headers=headers, json={'name': '常问验证', 'kb_ids': [baseline_kb.json()['id']]})
-                other_space = await client.post('/api/workspaces', headers=headers, json={'name': '常问范围隔离', 'kb_ids': [kbid]})
+                base_space = await client.post('/api/workspaces', headers=headers, json={'name': '常问验证', 'source_ids': [ds1_id]})
+                other_space = await client.post('/api/workspaces', headers=headers, json={'name': '常问范围隔离', 'source_ids': [ds2_id]})
                 base_space.raise_for_status()
                 other_space.raise_for_status()
                 base_wid, scoped_wid = (base_space.json()['id'], other_space.json()['id'])
 
-                async def chat(question, kb_ids=None):
-                    response = await client.post('/api/chat/stream', headers=headers, json=chat_input(**{'query': question, 'workspace_id': scoped_wid if kb_ids else base_wid}))
+                async def chat(question, source_ids=None):
+                    response = await client.post('/api/chat/stream', headers=headers, json=chat_input(**{'query': question, 'workspace_id': scoped_wid if source_ids else base_wid}))
                     check('chat_http_' + str(len(report['chats']) + 1), response.status_code == 200)
                     events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
                     terminal=events[-1] if events else {}
@@ -153,7 +152,7 @@ async def validate(args, model_value, temp):
                 rows = await listing()
                 check('three_paraphrases_one_group', len(rows) == 1 and rows[0]['count'] == 3 and (rows[0]['question'] == questions[0]), rows)
                 check('cross_user_isolation', await listing(as_other=True) == [])
-                check('resource_scope_empty', await listing({'kb_ids': kbid}) == [])
+                check('resource_scope_empty', await listing({'source_ids': 'unavailable-source'}) == [])
                 forbidden = await client.post('/api/chat/stream', headers=other_headers, json=chat_input(**{'query': questions[0], 'workspace_id': scoped_wid}))
                 check('resource_owner_revalidated', forbidden.status_code == 404)
                 mid, conv, _ = await chat(rows[0]['question'])
@@ -168,9 +167,9 @@ async def validate(args, model_value, temp):
                 check('different_metric_new_group', different['status'] == 'completed' and different['group_id'] != rows[0]['id'], different)
                 mid, _, _ = await chat('你好')
                 check('greeting_skipped', (await wait_record(mid))['status'] == 'skipped')
-                mid, _, _ = await chat(questions[0], [kbid])
+                mid, _, _ = await chat(questions[0], [ds2_id])
                 scoped = await wait_record(mid)
-                check('resource_group_isolation', scoped['status'] == 'completed' and scoped['group_id'] != rows[0]['id'] and (await listing({'kb_ids': kbid}) == []), scoped)
+                check('resource_group_isolation', scoped['status'] == 'completed' and scoped['group_id'] != rows[0]['id'] and (await listing({'source_ids': ds2_id}) == []), scoped)
                 await client.put('/api/settings/app-config/frequent_questions', headers=headers, json={'is_enabled': False})
                 mid, _, enqueued = await chat(questions[0])
                 check('disabled_no_enqueue', not enqueued and await listing() == [])

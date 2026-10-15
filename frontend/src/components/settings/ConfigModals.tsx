@@ -33,9 +33,9 @@ export const ConfigModals: React.FC<ConfigModalsProps> = ({ type, configs, onClo
       '欢迎使用智能AI问数，您可以向我咨询经营数据、报表分析相关问题。'
   );
   const [welcomeQuestions, setWelcomeQuestions] = useState<string[]>(
-    configs.welcome_setting.questions && configs.welcome_setting.questions.length > 0
+    Array.isArray(configs.welcome_setting?.questions)
       ? [...configs.welcome_setting.questions]
-      : ['各产品线销售情况', '北京的产品线收入情况', '深圳的产品销售情况']
+      : []
   );
 
   // 2. 模型配置状态
@@ -156,13 +156,13 @@ export const ConfigModals: React.FC<ConfigModalsProps> = ({ type, configs, onClo
             <SelectTrigger id="default-llm"><SelectValue placeholder="请选择对话模型" /></SelectTrigger>
             <SelectContent>{modelsList.filter(m => m.type !== 'embedding').map(m => <SelectItem key={m.id} value={m.id}>[{m.provider || '通用'}] {m.name} ({m.id})</SelectItem>)}</SelectContent>
           </Select></div>
-        <div className="space-y-2"><Label htmlFor="default-embedding">默认文档嵌入模型</Label>
+        <div className="space-y-2"><Label htmlFor="default-embedding">常问分组嵌入模型</Label>
           <Select value={defaultEmbeddingModel || '__none__'} onValueChange={value => setDefaultEmbeddingModel(value === '__none__' ? '' : value)}>
             <SelectTrigger id="default-embedding"><SelectValue placeholder="请选择嵌入模型" /></SelectTrigger>
             <SelectContent><SelectItem value="__none__">暂不配置嵌入模型</SelectItem>
               {modelsList.filter(m => m.type === 'embedding').map(m => <SelectItem key={m.id} value={m.id}>[{m.provider || '通用'}] {m.name} ({m.id})</SelectItem>)}
             </SelectContent>
-          </Select><p className="text-xs text-muted-foreground">用于知识库文档向量化与检索，不出现在对话模型列表中。</p></div>
+          </Select><p className="text-xs text-muted-foreground">用于常问问题的语义归组，不出现在对话模型列表中。</p></div>
         <div className="space-y-3"><div className="flex justify-between"><Label htmlFor="model-temperature">采样温度 (Temperature)</Label><span className="text-sm tabular-nums text-primary">{temperature}</span></div>
           <Slider id="model-temperature" aria-label="采样温度" min={0} max={1.5} step={0.1} value={[temperature]} onValueChange={values => setTemperature(values[0])} />
           <p className="text-xs text-muted-foreground">较低数值输出更精确，较高数值输出更多样。</p></div>
@@ -192,7 +192,7 @@ export const ConfigModals: React.FC<ConfigModalsProps> = ({ type, configs, onClo
       </div>}
       {type === 'frequent' && <div className="space-y-4">
         <div className="space-y-2"><Label htmlFor="frequent-threshold">常问问题展示次数阈值</Label><Input id="frequent-threshold" type="number" min={1} step={1} value={Number.isNaN(frequentThreshold) ? '' : frequentThreshold} onChange={e => setFrequentThreshold(e.target.valueAsNumber)} /></div>
-        <p className="text-sm text-muted-foreground">根据独立完整问题的提问次数自动生成，按当前知识库和数据源分别统计，最多展示 10 条。手工推荐请在开场白中配置。</p>
+        <p className="text-sm text-muted-foreground">根据独立完整问题的提问次数自动生成，按当前业务数据源范围分别统计，最多展示 10 条。手工推荐请在开场白中配置。</p>
         {configs.frequent_questions.reset_required && !resetDone && <Alert variant="destructive"><AlertDescription>嵌入模型已变化，统计暂停。重置后从新提问开始累计。</AlertDescription></Alert>}
         <Button variant="outline" disabled={saving} onClick={() => setConfirmReset(true)}>重置常问统计</Button>
         {resetDone && <p role="status" className="text-sm">已重置，从新提问开始累计。</p>}
@@ -202,7 +202,7 @@ export const ConfigModals: React.FC<ConfigModalsProps> = ({ type, configs, onClo
     </DialogContent>
     {showAddModelModal && <ModelEditor model={editingModel} models={modelsList} onClose={() => setShowAddModelModal(false)} onConfirm={handleConfirmModels} />}
     <AlertDialog open={confirmReset} onOpenChange={setConfirmReset}>
-      <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>重置常问统计？</AlertDialogTitle><AlertDialogDescription>清除当前用户的常问分组与统计记录，从新提问开始累计。聊天消息、知识库及业务数据保留。</AlertDialogDescription></AlertDialogHeader>
+      <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>重置常问统计？</AlertDialogTitle><AlertDialogDescription>清除当前用户的常问分组与统计记录，从新提问开始累计。聊天消息及业务数据保留。</AlertDialogDescription></AlertDialogHeader>
         <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={async () => {
           setSaving(true); setSaveError('');
           try { await apiRequest('/frequent-questions', {method: 'DELETE'}); setResetDone(true); await onReset?.(); }

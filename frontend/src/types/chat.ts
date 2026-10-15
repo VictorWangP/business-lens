@@ -1,3 +1,5 @@
+import type {ReadonlyJSONObject} from 'assistant-stream/utils';
+
 export interface MetricCard {
   label: string;
   value: string;
@@ -6,25 +8,11 @@ export interface MetricCard {
 }
 
 export interface ChartConfig {
-  type: 'bar' | 'line' | 'area' | 'pie';
+  type: 'bar' | 'line' | 'pie';
   title: string;
   x_key: string;
   y_keys: string[];
-  data: Record<string, any>[];
-}
-
-export interface CitationItem {
-  id: string;
-  doc_id: string;
-  doc_name: string;
-  chunk_index: number;
-  content: string;
-  score?: number;
-  chunk_id?: string;
-  version?: string;
-  pages?: number[];
-  headings?: string[];
-  retrieval_warning?: string;
+  data: Record<string, string | number | null>[];
 }
 
 export interface FinalAnswer {
@@ -34,24 +22,50 @@ export interface FinalAnswer {
   suggestions: string[];
 }
 
+export interface ExecutionResult {
+  status?: string; source_id?: string; source_name?: string; sql?: string;
+  metric?: string; definition?: string; row_count?: number; truncated?: boolean;
+  sources?: {id: string; name: string}[]; error?: string;
+}
+
+export interface ExecutionEvent {
+  type: string; name?: string; tool_id?: string; message?: string;
+  args?: ReadonlyJSONObject; result?: ExecutionResult;
+}
+
+export interface QueryEvidence {
+  query_id: string;
+  citation_id: string;
+  source_id?: string;
+  source_name: string;
+  retrieved_at?: string;
+  rows: Record<string, unknown>[];
+  truncated: boolean;
+  sql?: string;
+  parameters?: Record<string, unknown>;
+  chart?: ChartConfig | null;
+  metrics?: MetricCard[];
+}
+
+export interface BusinessPresentation {
+  answer: FinalAnswer;
+  queries: QueryEvidence[];
+  operations?: ExecutionEvent[];
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   tool_calls?: {
-    presentation?: {answer:FinalAnswer; queries:any[];citations:CitationItem[]};
-    metrics?: MetricCard[];
-    chart?: ChartConfig;
+    presentation?: BusinessPresentation;
     run_id?: string;
     status?: string;
     last_sequence?: number;
-    query_results?: {query_id: string; citation_id?: string; source_name: string; retrieved_at: string; rows: Record<string, any>[]; truncated: boolean; sql: string; parameters?: Record<string, unknown>}[];
-    suggestions?: string[];
-    answer?: FinalAnswer;
+    interrupts?: {id:string; reason?:string; message?:string; [key:string]:any}[];
+    execution_events?: ExecutionEvent[];
   };
-  citations?: CitationItem[];
-  execution_events?: {type: string; name?: string; tool_id?: string; message?: string}[];
   created_at: string;
 }
 
@@ -59,8 +73,6 @@ export interface Conversation {
   id: string;
   title: string;
   model: string;
-  kb_ids: string[];
-  source_ids?: string[];
   workspace_id?: string | null;
   scope_version?: number;
   is_pinned?: boolean;

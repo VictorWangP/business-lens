@@ -1,30 +1,30 @@
 import React, {createContext, useCallback, useContext, useEffect, useRef, useState} from 'react';
 import {useAuth} from './AuthContext';
 import {apiRequest} from '../services/api';
-import type {FeedbackSummary} from '../types/feedback';
-import type {Message} from '../types/chat';
+import type {FeedbackContextItem,FeedbackSummary} from '../types/feedback';
 
 interface FeedbackState {
-  records:Record<string,FeedbackSummary>; ready:boolean; error:string; refresh:()=>void;
+  records:Record<string,FeedbackSummary>; items:Record<string,FeedbackContextItem>; ready:boolean; error:string; refresh:()=>void;
   remember:(record:FeedbackSummary)=>void; questionFor:(id:string)=>string;
 }
 const Context = createContext<FeedbackState|null>(null);
 export const useFeedback = () => useContext(Context);
-export function FeedbackProvider({sessionId,messages,children}:{sessionId:string|null;messages:Message[];children:React.ReactNode}) {
+export function FeedbackProvider({sessionId,children}:{sessionId:string|null;children:React.ReactNode}) {
   const {user} = useAuth();
   const scope = `${user?.id || ''}:${sessionId || ''}`;
   const currentScope = useRef(scope); currentScope.current = scope;
-  const [state,setState] = useState<{scope:string; records:Record<string,FeedbackSummary>; ready:boolean; error:string}>({scope:'',records:{},ready:false,error:''});
+  const [state,setState] = useState<{scope:string; items:Record<string,FeedbackContextItem>; ready:boolean; error:string}>({scope:'',items:{},ready:false,error:''});
   const [reload,setReload] = useState(0);
   const refresh = useCallback(()=>setReload(value=>value+1),[]);
   useEffect(()=>{
     const controller = new AbortController();
-    setState({scope, records:{},ready:!sessionId || !user,error:''});
-    if (sessionId && user) apiRequest<FeedbackSummary[]>(`/sessions/${sessionId}/feedback`,{signal:controller.signal}).then(records=>{
+    setState({scope, items:{},ready:!sessionId || !user,error:''});
+    if (sessionId && user) apiRequest<{items:FeedbackContextItem[]}>(`/sessions/${sessionId}/feedback-context`,{signal:controller.signal}).then(response=>{
       if (controller.signal.aborted) return;
-      setState({scope, records:Object.fromEntries((Array.isArray(records) ? records : []).map(record=>[record.message_id,record])),ready:true,error:''});
+      const items=Object.fromEntries((Array.isArray(response?.items) ? response.items : []).map(item=>[item.message_id,item]));
+      setState({scope,items,ready:true,error:''});
     }).catch(error=>{
-      if (!controller.signal.aborted) setState({scope,records:{},ready:false,error:error.message});
+      if (!controller.signal.aborted) setState({scope,items:{},ready:false,error:error.message});
     });
     return ()=>controller.abort();
   },[scope,reload]);
@@ -34,11 +34,18 @@ export function FeedbackProvider({sessionId,messages,children}:{sessionId:string
   },[refresh]);
   const remember = (record:FeedbackSummary)=>{
     if (currentScope.current !== scope) return;
-    setState(previous=>({scope,ready:true,error:'',records:{...(previous.scope===scope ? previous.records : {}),[record.message_id]:record}}));
+    setState(previous=>{
+      const items=previous.scope===scope ? previous.items : {};
+      const existing=items[record.message_id];
+      return {scope,ready:true,error:'',items:{...items,[record.message_id]:{
+        message_id:record.message_id,run_id:existing?.run_id || null,run_status:existing?.run_status || 'completed',
+        eligible:true,ineligible_reason:null,question_message_id:existing?.question_message_id || null,
+        question_preview:existing?.question_preview || null,feedback:record,
+      }}};
+    });
   };
-  const questionFor = (id:string)=>{
-    const index=messages.findIndex(message=>message.id===id);
-    return messages.slice(0,index).reverse().find(message=>message.role==='user')?.content || '原问题将由服务端关联';
-  };
-  return <Context.Provider value={{records:state.scope===scope ? state.records : {},ready:state.scope===scope && state.ready,error:state.scope===scope ? state.error : '',refresh,remember,questionFor}}>{children}</Context.Provider>;
+  const items=state.scope===scope ? state.items : {};
+  const records=Object.fromEntries(Object.values(items).filter(item=>item.feedback).map(item=>[item.message_id,item.feedback!])) as Record<string,FeedbackSummary>;
+  const questionFor=(id:string)=>items[id]?.question_preview || '原问题未能从服务端关联';
+  return <Context.Provider value={{records,items,ready:state.scope===scope && state.ready,error:state.scope===scope ? state.error : '',refresh,remember,questionFor}}>{children}</Context.Provider>;
 }

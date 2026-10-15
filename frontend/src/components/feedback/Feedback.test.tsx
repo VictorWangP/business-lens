@@ -12,10 +12,10 @@ import type {Message} from '../../types/chat';
 vi.mock('../../services/api',()=>({apiRequest:vi.fn()}));
 vi.mock('../../context/AuthContext',()=>{const user={id:'u',username:'张经理'};return {useAuth:()=>({user})};});
 const detail:FeedbackDetail={id:'f1',user:{id:'u',name:'张经理'},question:'本月账龄',created_at:'2026-10-13T03:00:00Z',status:'pending',version:1,reason:'data_error',user_comment:'请核对金额',processing_note:'',last_handled_by:null,last_handled_at:null,original_deleted:false,
-  evidence_snapshot:{schema_version:1,answer:{content:'账龄主要集中在 30–60 天。',structured:{},metrics:[],chart:undefined,citations:[]},context:{question_message_id:'q1',history:[]},resource:{workspace_id:'w',workspace_name:'经营分析',scope_version:1,kb_ids:[],source_ids:[]},execution:{model:'test-model',status:'completed',created_at:'2026-10-13T03:00:00Z',finished_at:null,queries:[]}},
+  evidence_snapshot:{schema_version:2,answer:{content:'账龄主要集中在 30–60 天。'},presentation:{answer:{version:1,sections:[],suggestions:[]},queries:[]},context:{question_message_id:'q1',public_history:[],clarifications:[],truncated:false,kind:'public_archive'},resource:{workspace_id:'w',workspace_name:'经营分析',scope_version:1,source_ids:[]},execution:{run_id:'r1',assistant_message_id:'a1',model:'test-model',status:'completed',created_at:'2026-10-13T03:00:00Z',finished_at:null},completeness:{missing_fields:[],warnings:[]}},
   history:[{version:1,action:'created',actor_id:'u',actor_name:'张经理',from_status:null,to_status:'pending',old_note:'',new_note:'',created_at:'2026-10-13T03:00:00Z'}]};
-const question:Message={id:'q1',conversation_id:'s1',role:'user',content:'本月账龄',created_at:'2026-10-13T03:00:00Z'};
 const answer:Message={id:'a1',conversation_id:'s1',role:'assistant',content:'账龄主要集中在 30–60 天。',created_at:'2026-10-13T03:00:01Z',tool_calls:{run_id:'r1',status:'completed'}};
+const eligible={message_id:'a1',run_id:'r1',run_status:'completed',eligible:true,ineligible_reason:null,question_message_id:'q1',question_preview:'本月账龄',feedback:null};
 beforeEach(()=>vi.resetAllMocks());
 afterEach(()=>vi.useRealTimers());
 async function choose(label:string,value:string){const user=userEvent.setup();await user.click(screen.getByRole('combobox',{name:label}));await user.click(await screen.findByRole('option',{name:value}));}
@@ -23,11 +23,11 @@ async function choose(label:string,value:string){const user=userEvent.setup();aw
 it('loads summaries once for the session, submits reason and comment and restores feedback status',async()=>{
   const user=userEvent.setup();
   vi.mocked(apiRequest).mockImplementation(async(path,options)=>{
-    if(path==='/sessions/s1/feedback')return [];
+    if(path==='/sessions/s1/feedback-context')return {items:[eligible]};
     if(options?.method==='POST')return {id:'f1',message_id:'a1',status:'pending',created_at:detail.created_at};
     throw new Error(path);
   });
-  render(<FeedbackProvider sessionId="s1" messages={[question,answer]}><FeedbackButton message={answer}/></FeedbackProvider>);
+  render(<FeedbackProvider sessionId="s1"><FeedbackButton message={answer}/></FeedbackProvider>);
   await waitFor(()=>expect(screen.getByRole('button',{name:'反馈错误'})).toBeEnabled());
   await user.click(screen.getByRole('button',{name:'反馈错误'}));
   expect(screen.getByText('本月账龄')).toBeInTheDocument();
@@ -37,26 +37,26 @@ it('loads summaries once for the session, submits reason and comment and restore
   await user.click(screen.getByRole('button',{name:'提交反馈'}));
   expect(await screen.findByRole('button',{name:'已反馈 · 待处理'})).toBeDisabled();
   expect(apiRequest).toHaveBeenCalledWith('/messages/a1/feedback',expect.objectContaining({body:JSON.stringify({reason:'other',comment:'请核查范围'})}));
-  expect(vi.mocked(apiRequest).mock.calls.filter(([path])=>path==='/sessions/s1/feedback')).toHaveLength(1);
+  expect(vi.mocked(apiRequest).mock.calls.filter(([path])=>path==='/sessions/s1/feedback-context')).toHaveLength(1);
 });
 
 it('hides feedback for unfinished runs and clears another session summaries',async()=>{
-  vi.mocked(apiRequest).mockResolvedValue([{id:'f1',message_id:'a1',status:'resolved',created_at:detail.created_at}]);
-  const view=render(<FeedbackProvider sessionId="s1" messages={[question,answer]}><FeedbackButton message={answer}/></FeedbackProvider>);
+  vi.mocked(apiRequest).mockResolvedValue({items:[{...eligible,feedback:{id:'f1',message_id:'a1',status:'resolved',created_at:detail.created_at}}]});
+  const view=render(<FeedbackProvider sessionId="s1"><FeedbackButton message={answer}/></FeedbackProvider>);
   expect(await screen.findByRole('button',{name:'已反馈 · 已处理'})).toBeInTheDocument();
   let resolve:(value:unknown)=>void;
   vi.mocked(apiRequest).mockImplementation(()=>new Promise(done=>{resolve=done;}));
-  view.rerender(<FeedbackProvider sessionId="s2" messages={[question,answer]}><FeedbackButton message={answer}/></FeedbackProvider>);
+  view.rerender(<FeedbackProvider sessionId="s2"><FeedbackButton message={answer}/></FeedbackProvider>);
   expect(screen.queryByRole('button',{name:'已反馈 · 已处理'})).not.toBeInTheDocument();
-  await act(async()=>resolve([]));
-  view.rerender(<FeedbackProvider sessionId="s2" messages={[question,answer]}><FeedbackButton message={{...answer,tool_calls:{run_id:'r1',status:'running'}}}/></FeedbackProvider>);
+  await act(async()=>resolve({items:[]}));
+  view.rerender(<FeedbackProvider sessionId="s2"><FeedbackButton message={{...answer,tool_calls:{run_id:'r1',status:'running'}}}/></FeedbackProvider>);
   expect(screen.queryByRole('button',{name:'反馈错误'})).not.toBeInTheDocument();
 });
 
 it('preserves a failed submission and confirms discarding changes',async()=>{
   const user=userEvent.setup();
-  vi.mocked(apiRequest).mockImplementation(async(path)=>{if(path.includes('/sessions/'))return [];throw new Error('反馈服务不可用');});
-  render(<FeedbackProvider sessionId="s1" messages={[question,answer]}><FeedbackButton message={answer}/></FeedbackProvider>);
+  vi.mocked(apiRequest).mockImplementation(async(path)=>{if(path.includes('/sessions/'))return {items:[eligible]};throw new Error('反馈服务不可用');});
+  render(<FeedbackProvider sessionId="s1"><FeedbackButton message={answer}/></FeedbackProvider>);
   await waitFor(()=>expect(screen.getByRole('button',{name:'反馈错误'})).toBeEnabled());
   await user.click(screen.getByRole('button',{name:'反馈错误'}));
   await user.type(screen.getByRole('textbox',{name:'补充说明（可选）'}),'原始草稿');

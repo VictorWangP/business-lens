@@ -1,4 +1,4 @@
-"""Real graph, durable worker, Docling, SQL and retrieval with only provider substitutes."""
+"""Real graph, durable worker, SQL and metric execution with only provider substitutes."""
 import json
 import uuid
 import asyncio
@@ -9,10 +9,8 @@ from langchain_core.messages import AIMessage
 from sqlalchemy import select
 from app.agents.executor import AgentExecutor
 from app.database import AsyncSessionLocal
-from app.models.platform import AgentRun,RunEvent,IngestionJob
+from app.models.platform import AgentRun, RunEvent
 from app.services.llm_service import LLMService
-from app.infrastructure.embeddings import EmbeddingProvider
-from app.ingestion.pipeline import ingest
 from agent_helpers import CFG,answer,install_model,chat_input,read_events,presentation
 from test_platform import seed,auth
 from test_tabular import CSV
@@ -25,8 +23,8 @@ async def worker(database):
     yield
     task.cancel();await asyncio.gather(task,return_exceptions=True)
 
-async def workspace(client,headers,kb_ids=(),source_ids=()):
-    result=await client.post('/api/workspaces',headers=headers,json={'name':'测试空间','kb_ids':list(kb_ids),'source_ids':list(source_ids)})
+async def workspace(client,headers,source_ids=()):
+    result=await client.post('/api/workspaces',headers=headers,json={'name':'测试空间','source_ids':list(source_ids)})
     assert result.status_code==200,result.text
     return result.json()['id']
 
@@ -52,47 +50,46 @@ def scripted(tools,text):
     return respond
 
 @pytest.mark.asyncio
-async def test_docling_sql_joint_answer_and_idempotent_replay(monkeypatch):
-    uid,_,kb_id=await seed();await configure(monkeypatch)
-    async def embedding_config(cls,db,user_id):return cls({'base_url':'http://test/v1','model_id':'offline-embedding','api_key':'test'})
-    async def embedding(self,texts):return [[1.,0.,0.] for _ in texts]
-    monkeypatch.setattr(EmbeddingProvider,'for_user',classmethod(embedding_config))
-    monkeypatch.setattr(EmbeddingProvider,'embed',embedding)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test',headers=auth(uid)) as client:
-        imported=await client.post('/api/data-sources/import',data={'name':'订单'},files={'file':('orders.csv',CSV,'text/csv')})
-        assert imported.status_code==200,imported.text
-        sid=imported.json()['id']
-        uploaded=await client.post(f'/api/knowledge/bases/{kb_id}/documents/upload',files={'file':('policy.md','# 华东折扣政策\n\n折扣为5%，需主管审批；审批规则适用于华东客户。'.encode(),'text/markdown')})
-        async with AsyncSessionLocal() as db:
-            job=await db.scalar(select(IngestionJob).where(IngestionJob.doc_id==uploaded.json()['id']))
-            job_id,chunk_id=job.id,job.version+'_0'
-        await ingest(job_id)
-        tools=[('list_available_resources',{}),('get_business_schema',{'source_id':sid}),
-            ('execute_readonly_sql',{'source_id':sid,'sql':"SELECT SUM(amount) AS total FROM dataset WHERE order_date >= DATE '2026-01-01' AND order_date < DATE '2026-02-01'"}),
-            ('search_knowledge',{'query':'华东折扣政策'}),('search_knowledge',{'query':'折扣主管审批规则'}),
-            ('read_document_section',{'chunk_id':chunk_id})]
-        install_model(monkeypatch,scripted(tools,'一月销售额为0.30 [查询 Q1]。华东折扣需主管审批 [来源 S1]。'))
-        wid=await workspace(client,auth(uid),[kb_id],[sid]);payload=chat_input('汇总一月销售额，检索折扣政策',wid)
-        response=await client.post('/api/chat/stream',json=payload)
-        assert response.status_code==200,response.text
-        events=read_events(response)
-        assert events[-1]['type']=='RUN_FINISHED',events
-        data=presentation(events)
-        assert data['queries'][0]['rows']==[{'total':'0.30'}]
-        assert data['citations'][0]['headings']==['华东折扣政策']
-        assert data['citations'][0]['chunk_id']==chunk_id
-        assert [e['toolCallName'] for e in events if e['type']=='TOOL_CALL_START']==[name for name,_ in tools]
+async def test_sql_answer_and_idempotent_replay(monkeypatch):
+    uid, _ = await seed(); await configure(monkeypatch)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=auth(uid)) as client:
+        imported = await client.post('/api/data-sources/import', data={'name': '订单'}, files={'file': ('orders.csv', CSV, 'text/csv')})
+        assert imported.status_code == 200, imported.text
+        sid = imported.json()['id']
+        tools = [('list_available_resources', {}), ('get_business_schema', {'source_id': sid}),
+            ('execute_readonly_sql', {'source_id': sid, 'sql': "SELECT SUM(amount) AS total FROM dataset WHERE order_date >= DATE '2026-01-01' AND order_date < DATE '2026-02-01'"})]
+        install_model(monkeypatch, scripted(tools, '一月销售额为0.30 [查询 Q1]。'))
+        wid = await workspace(client, auth(uid), [sid]); payload = chat_input('汇总一月销售额', wid)
+        response = await client.post('/api/chat/stream', json=payload)
+        assert response.status_code == 200, response.text
+        events = read_events(response)
+        assert events[-1]['type'] == 'RUN_FINISHED', events
+        data = presentation(events)
+        assert data['queries'][0]['rows'] == [{'total': '0.30'}]
+        assert [e['toolCallName'] for e in events if e['type'] == 'TOOL_CALL_START'] == [name for name, _ in tools]
         assert '内部图表配置不得显示' not in response.text
-        assert all(e.get('delta')=='{}' for e in events if e['type']=='TOOL_CALL_ARGS')
-        replay=await client.post('/api/chat/stream',json=payload)
-        assert read_events(replay)==events
+        arguments = [json.loads(e['delta']) for e in events if e['type'] == 'TOOL_CALL_ARGS']
+        assert arguments[2] == tools[2][1]
+        operations = data['operations']
+        sql_start = next(e for e in operations if e.get('name') == 'execute_readonly_sql' and e['type'] == 'tool_start')
+        sql_end = next(e for e in operations if e.get('name') == 'execute_readonly_sql' and e['type'] == 'tool_end')
+        assert sql_start['args'] == tools[2][1]
+        assert sql_end['result']['source_name'] == '订单'
+        assert sql_end['result']['row_count'] == 1
+        assert 'SELECT' in sql_end['result']['sql']
+        assert 'rows' not in sql_end['result']
+        archived = (await client.get(f"/api/sessions/{payload['threadId']}/messages")).json()
+        assert archived[-1]['tool_calls']['presentation']['operations'] == operations
+        assert 'execution_events' not in archived[-1]['tool_calls']
+        replay = await client.post('/api/chat/stream', json=payload)
+        assert read_events(replay) == events
         async with AsyncSessionLocal() as db:
-            runs=(await db.scalars(select(AgentRun))).all();assert len(runs)==1 and runs[0].attempts==1
+            runs = (await db.scalars(select(AgentRun))).all(); assert len(runs) == 1 and runs[0].attempts == 1
 
 @pytest.mark.parametrize('chart_word,expected',[('折线图','line'),('折线图，不要输出绘图代码','line'),('饼图','pie'),('环形图','pie'),('柱状图','bar'),('列出月份和金额',None),('不要图表，只用表格',None)])
 @pytest.mark.asyncio
 async def test_charts_are_exact_data_parts(monkeypatch,chart_word,expected):
-    uid,_,_=await seed();await configure(monkeypatch)
+    uid,_=await seed();await configure(monkeypatch)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test',headers=auth(uid)) as client:
         imported=await client.post('/api/data-sources/import',data={'name':'月度销售'},files={'file':('orders.csv',CSV,'text/csv')});sid=imported.json()['id']
         tools=[('get_business_schema',{'source_id':sid}),('execute_readonly_sql',{'source_id':sid,'sql':"SELECT SUBSTRING(CAST(order_date AS VARCHAR),1,7) AS month,SUM(amount) AS revenue FROM dataset GROUP BY month ORDER BY month"})]
@@ -108,10 +105,10 @@ async def test_native_limits_bound_repeated_tool_calls(monkeypatch):
     from app.config import settings
     monkeypatch.setattr(settings,'AGENT_MAX_TOOL_CALLS',2)
     install_model(monkeypatch,lambda messages:AIMessage(content='',tool_calls=[{'id':str(uuid.uuid4()),'name':'list_available_resources','args':{}}]))
-    executor=AgentExecutor('user',[],[],CFG)
+    executor=AgentExecutor('user', [],CFG)
     with pytest.raises(RuntimeError):
         async for _ in executor.stream('查询',thread_id=str(uuid.uuid4()),run_id='r',user_message_id='u',assistant_message_id='a'): pass
-    assert executor.calls==2
+    assert executor.sql.calls==2
 @pytest.mark.parametrize('kind, disabled, rows, truncated, expected', [
     ('none', False, [{'region': '华东', 'revenue': 10}, {'region': '华北', 'revenue': 20}], False, None),
     ('bar', False, [{'region': '华东', 'revenue': 10}, {'region': '华北', 'revenue': 20}], False, 'bar'),
@@ -124,27 +121,28 @@ async def test_query_only_emits_suitable_requested_charts(monkeypatch, kind, dis
     from types import SimpleNamespace
     async def execute(*args):
         return {'rows': rows, 'truncated': truncated}
-    monkeypatch.setattr('app.agents.executor.execute', execute)
-    executor = AgentExecutor('user', [], [], {})
-    executor.charts_disabled = disabled
-    await executor.query(SimpleNamespace(id='source', name='销售'), 'SELECT ...', chart_type=kind)
+    monkeypatch.setattr('app.agents.tools.execute', execute)
+    executor = AgentExecutor('user', [], {})
+    executor.sql.charts_disabled = disabled
+    await executor.sql.query(SimpleNamespace(id='source', name='销售'), 'SELECT ...', chart_type=kind)
     events = []
-    while not executor.pending.empty():
-        events.append(executor.pending.get_nowait())
+    while not executor.sql.pending.empty():
+        events.append(executor.sql.pending.get_nowait())
     assert events[0]['type'] == 'query_result'
     charts = [event['chart'] for event in events if event['type'] == 'query_result' and event.get('chart')]
     assert [chart['type'] for chart in charts] == ([expected] if expected else [])
 
 @pytest.mark.asyncio
 async def test_http_pause_resume_replay_is_self_contained_and_idempotent(monkeypatch):
-    uid,_,kb=await seed();await configure(monkeypatch)
+    uid,_=await seed();await configure(monkeypatch)
     def respond(messages):
         if not any(m.type=='tool' and m.name=='ask_clarification' for m in messages):
             return AIMessage(content='',tool_calls=[{'id':'clarify','name':'ask_clarification','args':{'question':'使用哪个年度？'}}])
         return answer('按2026年分析。')
     install_model(monkeypatch,respond)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test',headers=auth(uid)) as client:
-        wid=await workspace(client,auth(uid),[kb]);payload=chat_input('分析销售',wid)
+        imported=await client.post('/api/data-sources/import',data={'name':'销售'},files={'file':('orders.csv',CSV,'text/csv')});sid=imported.json()['id']
+        wid=await workspace(client,auth(uid),source_ids=[sid]);payload=chat_input('分析销售',wid)
         first=await client.post('/api/chat/stream',json=payload);first_events=read_events(first)
         assert first_events[-1]['outcome']['type']=='interrupt',first_events
         item=first_events[-1]['outcome']['interrupts'][0]

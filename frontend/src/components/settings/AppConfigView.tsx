@@ -179,7 +179,7 @@ export const AppConfigView: React.FC = () => {
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              配置各业务场景使用的AI模型（主力对话：{configs.model_setting.default_model}，文档嵌入：{configs.model_setting.default_embedding_model || '内置'}）
+              配置各业务场景使用的AI模型（主力对话：{configs.model_setting.default_model}，常问分组嵌入：{configs.model_setting.default_embedding_model || '未配置'}）
             </p>
           </CardContent>
         </Card>

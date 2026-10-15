@@ -1,0 +1,64 @@
+name: businesslens
+
+x-backend: &backend
+  image: businesslens-backend:${IMAGE_TAG:-local}
+  build: ./backend
+  env_file: ./deploy/.env
+  environment:
+    DATABASE_URL: sqlite+aiosqlite:////data/app.db
+    STORAGE_DIR: /data
+    TASK_BACKEND: database
+  volumes:
+    - app-data:/data
+  init: true
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: '10m'
+      max-file: '3'
+
+services:
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    restart: 'no'
+
+  api:
+    <<: *backend
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.workers.local"]
+    restart: unless-stopped
+    stop_grace_period: 60s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    image: businesslens-web:${IMAGE_TAG:-local}
+    build: ./frontend
+    restart: unless-stopped
+    init: true
+    ports:
+      - '${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:80'
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+
+volumes:
+  app-data:

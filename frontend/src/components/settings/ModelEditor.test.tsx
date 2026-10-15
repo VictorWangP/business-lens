@@ -17,6 +17,17 @@ const configs = {
 } as AppConfigs;
 
 describe('shadcn model configuration', () => {
+  it('preserves and edits explicit provider capacity', async () => {
+    const user = userEvent.setup(); const confirm = vi.fn();
+    const configured = {...existing, context_window:262144, max_input_tokens:240000, max_output_tokens:8192};
+    render(<ModelEditor model={configured} models={[configured]} onClose={vi.fn()} onConfirm={confirm} />);
+    expect(screen.getByLabelText('上下文窗口')).toHaveValue(262144);
+    await user.clear(screen.getByLabelText('最大输入 Token'));
+    await user.type(screen.getByLabelText('最大输入 Token'), '200000');
+    await waitFor(() => expect(screen.getByRole('button', {name:'确认修改'})).toBeEnabled(), {timeout:3000});
+    await user.click(screen.getByRole('button', {name:'确认修改'}));
+    expect(confirm).toHaveBeenCalledWith([expect.objectContaining({context_window:262144, max_input_tokens:200000, max_output_tokens:8192})], 'old-id');
+  });
   it('starts empty and requires user configuration before connecting or adding', async () => {
     const user = userEvent.setup(); const confirm = vi.fn();
     render(<ModelEditor models={[]} onClose={vi.fn()} onConfirm={confirm} />);

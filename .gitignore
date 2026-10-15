@@ -27,3 +27,4 @@ dist/
 
 # Private rollback snapshots
 .local-backups/
+backups/

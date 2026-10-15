@@ -53,7 +53,7 @@ async def chat_stream(payload: 'RunAgentInput', current_user: User = Depends(get
         workspace = await get_workspace(db, current_user.id, run.workspace_id)
         if workspace.version != run.scope_version:
             raise HTTPException(409, '业务空间已更新，请停止暂停的任务并重新提问')
-        await validate_scope(db, current_user.id, run.resource_scope['kb_ids'], run.resource_scope['source_ids'])
+        await validate_scope(db, current_user.id, run.resource_scope['source_ids'])
         if run.status != 'paused':
             if run.input_payload.get('resume') != incoming:
                 raise HTTPException(409, '该会话没有可恢复的暂停任务')
@@ -78,7 +78,7 @@ async def chat_stream(payload: 'RunAgentInput', current_user: User = Depends(get
             calls['status'] = 'resumed'
             saved.tool_calls = json.dumps(calls, ensure_ascii=False)
             continued = Message(user_id=current_user.id, conversation_id=run.conversation_id,
-                scope_version=run.scope_version, role='assistant', content='', citations=saved.citations,
+                scope_version=run.scope_version, role='assistant', content='',
                 tool_calls=json.dumps({**calls, 'status':'queued'}, ensure_ascii=False))
             db.add(continued)
             await db.flush()
@@ -95,13 +95,14 @@ async def chat_stream(payload: 'RunAgentInput', current_user: User = Depends(get
         request = ChatRequest(conversation_id=conversation.id if conversation else None,
             workspace_id=(payload.forwarded_props or {}).get('workspace_id'),
             query=latest.content, model=(payload.forwarded_props or {}).get('model'))
+        user_id = current_user.id
         try:
-            run = await prepare_chat(db, current_user.id, request, thread_id=payload.thread_id,
+            run = await prepare_chat(db, user_id, request, thread_id=payload.thread_id,
                 run_id=payload.run_id, user_message_id=latest.id if not user_message else str(uuid.uuid4()))
         except IntegrityError:
             await db.rollback()
             run = await db.scalar(select(AgentRun).where(AgentRun.id == payload.run_id,
-                AgentRun.user_id == current_user.id, AgentRun.conversation_id == payload.thread_id))
+                AgentRun.user_id == user_id, AgentRun.conversation_id == payload.thread_id))
             if not run or run.input_payload.get('query') != latest.content:
                 raise HTTPException(409, '会话已有活动任务或请求 ID 冲突')
     if settings.TASK_BACKEND == 'celery' and run.status == 'queued':

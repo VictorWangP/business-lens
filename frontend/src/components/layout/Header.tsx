@@ -23,17 +23,15 @@ export const Header: React.FC<HeaderProps> = ({
       case 'chat':
         return '智能问数 / 对话工作区';
       case 'workspaces':
-        return '业务空间 / 空间管理';
+        return '数据管理 / 业务空间';
       case 'feedback':
         return '反馈管理 / 回复校对';
       case 'config':
         return '系统管理 / 应用配置';
-      case 'knowledge':
-        return '数据管理 / 知识库';
       case 'data':
         return '数据管理 / 业务数据';
       default:
-        return '商析 BusinessLens';
+        return '经管之星 BusinessLens';
     }
   };
 

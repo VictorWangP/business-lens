@@ -42,7 +42,7 @@ async def test_real_csv_decimal_date_queries_and_filesystem_isolation():
 
 @pytest.mark.asyncio
 async def test_upload_api_metric_and_agent_use_actual_imported_data():
-    a,b,_ = await seed()
+    a,b = await seed()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
         r = await client.post('/api/data-sources/import', headers=auth(a), data={'name':'真实订单'}, files={'file':('orders.csv', CSV, 'text/csv')})
         assert r.status_code == 200, r.text
@@ -54,14 +54,14 @@ async def test_upload_api_metric_and_agent_use_actual_imported_data():
             'sql_template':'SELECT SUM(amount) AS total FROM dataset WHERE order_date>=:start_date AND order_date<:end_date','unit':'元'})
         assert r.status_code==200, r.text
         mid=r.json()['id']
-        agent = AgentExecutor(a, [], [sid], {})
-        tool = next(t for t in agent.tools() if t.name=='query_metrics')
+        agent = AgentExecutor(a, [sid], {})
+        tool = next(t for t in agent.sql.tools() if t.name=='query_metrics')
         output = await tool.ainvoke({'metric_id':mid,'start_date':'2026-01-01','end_date':'2026-02-01'})
         assert 'error' not in json.loads(output)
-        assert agent.queries[0]['rows']==[{'total':'0.30'}]
-        assert agent.queries[0]['citation_id'].startswith('Q')
+        assert agent.sql.queries[0]['rows']==[{'total':'0.30'}]
+        assert agent.sql.queries[0]['citation_id'].startswith('Q')
         assert (await client.delete(f'/api/data-sources/{sid}',headers=auth(a))).status_code==204
-        with pytest.raises(ValueError): await agent.source(sid)
+        with pytest.raises(ValueError): await agent.sql.source(sid)
 
 
 def test_xlsx_sheet_and_formula_validation():

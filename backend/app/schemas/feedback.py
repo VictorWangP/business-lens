@@ -1,8 +1,20 @@
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.agents.answer import BusinessPresentation
 
 FeedbackStatus = Literal['pending', 'resolved']
 FeedbackReason = Literal['data_error', 'irrelevant', 'citation_error', 'presentation_error', 'other']
+
+
+class FeedbackSnapshotV2(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    schema_version: Literal[2]
+    answer: dict
+    presentation: BusinessPresentation
+    context: dict
+    resource: dict
+    execution: dict
+    completeness: dict
 
 
 class FeedbackCreate(BaseModel):

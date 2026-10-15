@@ -24,15 +24,15 @@ async def reset_required(db, user_id):
 
 
 @router.get('')
-async def frequent_questions(workspace_id: str | None = None, kb_ids: list[str] = Query(default=[]), source_ids: list[str] = Query(default=[]),
+async def frequent_questions(workspace_id: str | None = None, source_ids: list[str] = Query(default=[]),
                              user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if workspace_id:
         import json
         from app.services.resource_scope import get_workspace, validate_scope
         workspace = await get_workspace(db, user.id, workspace_id)
-        kb_ids, source_ids = json.loads(workspace.kb_ids), json.loads(workspace.source_ids)
-        await validate_scope(db, user.id, kb_ids, source_ids)
-    return await list_questions(db, user.id, kb_ids, source_ids)
+        source_ids = json.loads(workspace.source_ids)
+        await validate_scope(db, user.id, source_ids)
+    return await list_questions(db, user.id, source_ids)
 
 
 @router.delete('')

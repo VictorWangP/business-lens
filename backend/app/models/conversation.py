@@ -11,8 +11,6 @@ class Conversation(Base):
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(200), default="新建对话")
     model: Mapped[str] = mapped_column(String(50), default="")
-    kb_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON 数组存储关联的知识库 IDs
-    source_ids: Mapped[str] = mapped_column(Text, default="[]")
     workspace_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("business_workspaces.id", ondelete="SET NULL"), nullable=True)
     scope_version: Mapped[int] = mapped_column(Integer, default=0)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -32,7 +30,6 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # user, assistant, system, tool
     content: Mapped[str] = mapped_column(Text, nullable=False)
     tool_calls: Mapped[str] = mapped_column(Text, nullable=True)  # JSON: 包含图表配置、指标卡片等
-    citations: Mapped[str] = mapped_column(Text, nullable=True)   # JSON: 包含 RAG 检索引用片段
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     conversation = relationship("Conversation", back_populates="messages")
@@ -52,5 +49,4 @@ class BusinessWorkspace(Base):
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     name: Mapped[str] = mapped_column(String(100))
-    kb_ids: Mapped[str] = mapped_column(Text, default="[]")
     source_ids: Mapped[str] = mapped_column(Text, default="[]")

@@ -16,17 +16,3 @@ class UserProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User", back_populates="user_profiles")
-
-class MemoryFact(Base):
-    __tablename__ = "memory_facts"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
-    raw_fact: Mapped[str] = mapped_column(Text, nullable=False)
-    subject: Mapped[str] = mapped_column(String(100), default="")
-    predicate: Mapped[str] = mapped_column(String(100), default="")
-    object: Mapped[str] = mapped_column(String(200), default="")
-    source_conversation_id: Mapped[str] = mapped_column(String(36), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    user = relationship("User", back_populates="memory_facts")

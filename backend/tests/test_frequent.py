@@ -10,7 +10,6 @@ from app.database import AsyncSessionLocal
 from app.models.user import User
 from app.models.conversation import Conversation, Message, BusinessWorkspace
 from app.models.frequent import QuestionGroup, QuestionRecord
-from app.models.knowledge import KnowledgeBase
 from app.models.platform import DataSource
 from app.services import frequent_service as svc
 from app.infrastructure.embeddings import EmbeddingProvider
@@ -45,16 +44,16 @@ async def seed():
         a, b = User(username='a', hashed_password='unused'), User(username='b', hashed_password='unused')
         db.add_all([a,b]); await db.flush()
         conv = Conversation(user_id=a.id)
-        kb = KnowledgeBase(user_id=a.id, name='kb')
-        source = DataSource(user_id=a.id, name='source', connection_secret='unused')
-        db.add_all([conv,kb,source]); await db.commit()
-        return a.id,b.id,conv.id,kb.id,source.id
+        source1 = DataSource(user_id=a.id, name='source1', connection_secret='unused')
+        source2 = DataSource(user_id=a.id, name='source2', connection_secret='unused')
+        db.add_all([conv,source1,source2]); await db.commit()
+        return a.id,b.id,conv.id,source1.id,source2.id
 
 async def message(user, conv, text='2026年北京代表处收入是多少？', kbs=(), sources=()):
     async with AsyncSessionLocal() as db:
         msg = Message(user_id=user, conversation_id=conv, role='user', content=text)
         db.add(msg)
-        await svc.enqueue(db,msg,kbs,sources); await svc.enqueue(db,msg,kbs,sources)
+        await svc.enqueue(db,msg,sources); await svc.enqueue(db,msg,sources)
         await db.commit()
         return msg.id
 
@@ -66,7 +65,7 @@ def client():
 
 @pytest.mark.asyncio
 async def test_exact_count_api_delete_and_idempotence(providers):
-    a,b,conv,kb,source = await seed()
+    a,b,conv,source1,source2 = await seed()
     ids = [await message(a,conv) for _ in range(3)]
     for mid in ids: await process(mid); await process(mid)
     assert providers['embed'] == providers['judge'] == 1
@@ -78,8 +77,8 @@ async def test_exact_count_api_delete_and_idempotence(providers):
         assert len(listed) == 1 and listed[0]['count'] == 3
         assert datetime.fromisoformat(listed[0]['last_asked_at']).utcoffset().total_seconds() == 0
         assert (await c.get('/api/frequent-questions',headers=auth(b))).json() == []
-        assert (await c.get('/api/frequent-questions',params={'kb_ids':kb},headers=auth(a))).json() == []
-        assert (await c.get('/api/frequent-questions',params={'source_ids':source},headers=auth(b))).json() == []
+        assert (await c.get('/api/frequent-questions',params={'source_ids':source1},headers=auth(a))).json() == []
+        assert (await c.get('/api/frequent-questions',params={'source_ids':source2},headers=auth(b))).json() == []
         assert (await c.get('/api/frequent-questions')).status_code == 401
         async with AsyncSessionLocal() as db:
             await db.execute(delete(Message).where(Message.id == ids[0])); await db.commit()
@@ -93,11 +92,11 @@ async def test_exact_count_api_delete_and_idempotence(providers):
 
 @pytest.mark.asyncio
 async def test_scope_isolation_and_canonicalization(providers):
-    a,b,conv,kb,source = await seed()
-    assert svc.scope_key([kb,kb],[source]) == svc.scope_key([kb],[source,source])
-    assert svc.scope_key([kb],[]) != svc.scope_key([],[kb])
-    for kbs,sources in [([],[]),([kb],[]),([kb],[source])]:
-        await process(await message(a,conv,kbs=kbs,sources=sources))
+    a,b,conv,source1,source2 = await seed()
+    assert svc.scope_key([source1,source1]) == svc.scope_key([source1])
+    assert svc.scope_key([source1]) != svc.scope_key([source2])
+    for sources in [[],[source1],[source1,source2]]:
+        await process(await message(a,conv,sources=sources))
         assert providers['candidates'][-1] == []
     async with AsyncSessionLocal() as db:
         other = Conversation(user_id=b); db.add(other); await db.commit(); other_id=other.id
@@ -110,19 +109,19 @@ async def test_scope_isolation_and_canonicalization(providers):
 
 @pytest.mark.asyncio
 async def test_chat_enqueues_same_transaction(providers):
-    a,_,conv,kb,source=await seed()
+    a,_,conv,source1,source2=await seed()
     async with AsyncSessionLocal() as db:
-        space = BusinessWorkspace(user_id=a,name='测试',kb_ids=json.dumps([kb]),source_ids=json.dumps([source]))
+        space = BusinessWorkspace(user_id=a,name='测试',source_ids=json.dumps([source1]))
         db.add(space); await db.flush()
         (await db.get(Conversation,conv)).workspace_id=space.id
         await db.commit()
         await prepare_chat(db,a,ChatRequest(query='2026北京收入',conversation_id=conv))
     async with AsyncSessionLocal() as db:
         record=await db.scalar(select(QuestionRecord))
-        assert record.status=='pending' and record.kb_ids==[kb] and record.source_ids==[source]
+        assert record.status=='pending' and record.source_ids==[source1]
         assert (await db.get(Message,record.message_id)).content=='2026北京收入'
         msg=Message(user_id=a,conversation_id=conv,role='user',content='rollback')
-        db.add(msg); await svc.enqueue(db,msg,[],[]); mid=msg.id; await db.rollback()
+        db.add(msg); await svc.enqueue(db,msg,[]); mid=msg.id; await db.rollback()
     assert providers['embed']==providers['judge']==0
     async with AsyncSessionLocal() as db:
         assert await db.get(Message,mid) is None and await db.get(QuestionRecord,mid) is None
@@ -150,7 +149,7 @@ async def test_paraphrase_top_three_relative_and_eligibility(providers,monkeypat
 
 @pytest.mark.asyncio
 async def test_retry_recovery_failure_deleted_resource(providers,monkeypatch):
-    a,_,conv,kb,_=await seed()
+    a,_,conv,source1,_=await seed()
     async def timeout(*args): raise TimeoutError('secret must not persist')
     monkeypatch.setattr(svc,'judge',timeout)
     mid=await message(a,conv)
@@ -164,9 +163,9 @@ async def test_retry_recovery_failure_deleted_resource(providers,monkeypatch):
         r=await db.get(QuestionRecord,abandoned); r.status='processing'; r.attempts=1; await db.commit()
     await recover()
     async with AsyncSessionLocal() as db: assert (await db.get(QuestionRecord,abandoned)).status=='pending'
-    invalid=await message(a,conv,kbs=[kb])
+    invalid=await message(a,conv,sources=[source1])
     async with AsyncSessionLocal() as db:
-        await db.execute(delete(KnowledgeBase).where(KnowledgeBase.id==kb)); await db.commit()
+        await db.execute(delete(DataSource).where(DataSource.id==source1)); await db.commit()
     await process(invalid)
     async with AsyncSessionLocal() as db: assert (await db.get(QuestionRecord,invalid)).status=='skipped'
 
@@ -263,7 +262,7 @@ async def test_list_limit_sort_and_first_representative_survives_deletion(provid
     monkeypatch.setattr(svc,'judge',lambda *args: None)  # exact path must avoid LLM
     await process(await message(a,conv,'北京代表处2026年确认了多少收入？'))
     async with AsyncSessionLocal() as db:
-        rows=await svc.list_questions(db,a,[],[])
+        rows=await svc.list_questions(db,a,[])
         assert rows[0]['count']==2 and rows[0]['question']=='2026年北京代表处收入是多少？'
 
 @pytest.mark.asyncio

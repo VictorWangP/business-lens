@@ -1,12 +1,10 @@
-# 商析 · BusinessLens — rag-langgraph
+# 经管之星 · BusinessLens
 
-企业数据分析与文档问答。Agent 使用 LangChain `create_agent`，执行状态和历史摘要使用 LangGraph checkpoint 与原生 SummarizationMiddleware；文档使用 Docling 官方 LangChain loader。前端使用 assistant-ui 官方 AG-UI runtime。
-
-此目录为独立重构版本。旧版代码、数据库、配置和依赖环境保留在 `rag-demo`；新版直接建立新数据库，重新配置模型并导入资料。
+企业关系数据问答应用。系统采用一个 SQL Agent 查询经授权的 CSV、Excel、DuckDB、SQLite 和 PostgreSQL 数据源。Agent 使用 LangChain `create_agent`，LangGraph 保存可恢复执行状态；assistant-ui 官方 AG-UI runtime 管理前端会话消息。
 
 ## 本地启动
 
-Python 3.12、Node.js 20+。从本项目根目录执行：
+需要 Python 3.12、Node.js 20+。在项目根目录执行：
 
 ```bash
 python3.12 -m venv backend/.venv
@@ -15,56 +13,43 @@ backend/.venv/bin/python backend/scripts/prepare_local.py
 npm ci --prefix frontend
 ```
 
-初始化脚本生成独立密钥，初始化应用 SQLite 和 checkpoint SQLite。默认写入本目录 `storage-v2/`。已有 `.env` 不覆盖；密钥应私下保存，不提交 Git。
-
-分别启动四个进程：
+初始化脚本生成本地配置并创建应用数据库和 checkpoint 数据库。默认使用 SQLite 与 DuckDB，不需要 Redis 或外部数据库服务。启动 API、后台任务和前端：
 
 ```bash
-# 在 backend 目录：API
+# backend 目录
 .venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8001
-# 在 backend 目录：文档、索引与 Agent worker
 .venv/bin/python -m app.workers.local
-# 在 backend 目录：常问统计
-.venv/bin/python -m app.workers.frequent
-# 在 frontend 目录：前端
+
+# frontend 目录
 npm run dev
 ```
 
-打开 [前端](http://localhost:5174) 或 [接口说明](http://localhost:8001/docs)，注册账号，在模型设置中配置对话和嵌入模型，然后导入 CSV/Excel、知识文档并配置业务空间。
+访问 [前端](http://localhost:5174) 或 [API 文档](http://localhost:8001/docs)，注册账号，配置支持工具调用的模型，导入表格或连接数据库，再创建业务空间。
 
-默认使用 SQLite、DuckDB 和 Chroma，无需 Redis 或数据库服务。缺少模型、额度不足、证据为空和执行失败会明确报告。
+统一 worker 默认运行 Agent 与常问任务。也可以使用 `--roles agent` 或 `--roles frequent` 分开部署；不要让多个进程同时消费常问任务。
 
-## 主要能力
+## Linux 容器部署
 
-- CSV/Excel 查询快照、金额精度、授权视图与只读 SQL、业务指标。
-- Docling 文档结构、页码、章节与表格；HybridChunker 切片；混合检索、相邻原文读取、版本发布与重建。
-- 长会话原生摘要；聊天归档独立保存；精确查询结果使用稳定引用，不从摘要重建数值。
-- 独立 worker 执行；浏览器断线不取消任务；标准事件重放；checkpoint 故障恢复；人工澄清暂停与继续。
-- 编号标题、多个图表/表格、三个延伸问题、折叠执行过程；原始工具结果和内部模型草稿不进入公开正文。
-- 认证、业务空间、收藏、常问、反馈管理与语音。
-
-### 状态与通信
-
-| 权威数据 | 保存位置 | 用途 |
-| --- | --- | --- |
-| 模型消息、摘要、暂停任务 | LangGraph checkpoint | Agent 继续执行 |
-| 完整聊天正文与业务展示 | 应用消息归档 | 历史、复制、语音、反馈 |
-| 精确查询及来源证据 | 授权 RunEvent 证据归档与知识索引 | 结果引用与溯源 |
-| 有序公开事件 | RunEvent | AG-UI 断线重放 |
-
-客户端不能注入工具、模型历史或图状态。服务端固定用户、会话、业务空间和范围版本；暂停恢复再次检查授权。具体边界见 [新版实现说明](docs/langgraph_implementation.md)。
-
-## 依赖与配置
-
-完整 Python 依赖锁定于 `backend/requirements.lock`，前端锁定于 `frontend/package-lock.json`。修改直接依赖后重新生成锁文件：
+完整步骤见[容器部署文档](docs/container-deployment.md)。生产配置包含前端 Nginx、API、统一 worker、数据库迁移与持久化数据卷：
 
 ```bash
-uv pip compile backend/requirements.txt --universal --generate-hashes --output-file backend/requirements.lock
+bash scripts/deploy.sh init   # 生成独立部署密钥，仅执行一次
+# 按部署文档编辑 deploy/.env
+bash scripts/deploy.sh build
+bash scripts/deploy.sh up
 ```
 
-Docling 首次处理 PDF/OCR 会下载解析模型。当前锁定 RapidOCR 3.9.1，避免 Docling 2.136 与 RapidOCR 3.10 的语言常量兼容问题。容器使用独立项目名和独立卷，不与旧版共享数据；`docker compose up --build` 暴露 API 8001。
+默认仅监听服务器 `127.0.0.1:8080`，通过 HTTPS 网关或 SSH 隧道访问。升级前自动备份已有实例；备份、恢复和本地数据迁移限制见部署文档。
 
-模型预算在 `backend/.env.example` 中配置：上下文窗口、原生摘要触发/保留 token、输出上限、单次调用与总 token 预算。窗口应按实际模型能力设置。摘要会减少模型上下文，不删除聊天归档或精确结果。
+## 主要行为
+
+- SQL 只读执行，并按用户与业务空间授权数据源、视图和列。
+- LangGraph checkpoint 保存模型历史及暂停任务；应用归档保存聊天展示和可重放运行事件。
+- 查询结果按会话与范围保存为精确证据；历史摘要不会替代查询证据。
+- 最终答案、表格、指标、图表、延伸问题和操作过程使用统一的业务展示契约。
+- 反馈、常问、收藏、模型配置和语音属于应用功能；业务事实来自授权数据查询。
+
+数据导入和授权边界见[业务数据导入技术设计](docs/业务数据导入技术设计.md)与[业务空间和会话绑定技术设计](docs/业务空间和会话绑定技术设计.md)。上下文摘要和工具结果整理策略见[会话上下文管理](docs/agent_context_management.md)。
 
 ## 验证
 
@@ -74,22 +59,10 @@ npm test --prefix frontend -- --run
 npm run build --prefix frontend
 ```
 
-PDF/OCR 验收需要首次下载模型，显式运行：
+真实模型测试只有在本地提供私有配置时才会运行。数据库 schema 由 Alembic 管理。已有本项目数据库升级时，在 `backend` 目录执行 `.venv/bin/python -m alembic upgrade head`；不支持旧版知识库数据库的跨代迁移。
 
-```bash
-RAG_DOCLING_PDF_ACCEPTANCE=1 backend/.venv/bin/python -m pytest backend/tests/test_docling.py -q
-```
+`0002_cleanup_legacy` 删除已停用的 `memory_facts` 和内置演示 `sales_orders` 表，并移除运行范围中的空 `kb_ids`。非空旧表数据与修改前的范围快照先导出至 `STORAGE_DIR/.local-backups/cleanup-legacy/`，导出文件权限为 `0600`；遇到非空知识库范围时迁移停止。执行前应使用 SQLite backup API 保存完整应用库，回退时停止应用后恢复该备份。checkpoint 数据库继续用于 Agent 恢复，不在此迁移中修改。
 
-真实模型测试使用显式提供的私有配置文件，未配置时跳过。不得把密钥加入测试代码、报告或 Git。当前实际结果和限制见 [验收记录](docs/validation/langgraph_refactor.md)。
+## 配置
 
-## 回退与切换
-
-旧版基线提交：`6149727c05d0e4ef7c8c7e7f83d6352e5de0df5b`。保护分支和标签均为 `baseline/pre-langgraph-20261014`；独立 bundle、数据、配置和依赖清单在原目录 `.local-backups/legacy-20261014/`。
-
-回退时停止新版进程，进入保留的 `rag-demo`，使用原 `backend/venv`、原配置与原数据启动 API 8000、前端 5173。不要将新版数据库交给旧版，也不要执行跨代 downgrade。新版分支为 `rag-langgraph`，验收通过并审核后再切换主线。
-
-- [批准的实施步骤](docs/langgraph_docling_implementation_plan.md)
-- [当前实现与自定义职责](docs/langgraph_implementation.md)
-- [实际验收与待处理事项](docs/validation/langgraph_refactor.md)
-
-其他早期设计/评估文档保留为历史记录；新版启动与实现以以上文档为准。
+Python 依赖锁定于 `backend/requirements.lock`，前端依赖锁定于 `frontend/package-lock.json`。示例配置见 `backend/.env.example`。模型上下文容量、摘要阈值、输出上限和执行限制都可按部署配置。百炼及 MaaS endpoint 会关闭 thinking 模式，以兼容当前结构化工具调用。

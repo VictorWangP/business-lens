@@ -10,7 +10,6 @@ from sqlalchemy import select, func, update
 from app.models.config import AppConfig
 from app.models.conversation import Message
 from app.models.frequent import QuestionGroup, QuestionRecord
-from app.models.knowledge import KnowledgeBase
 from app.models.platform import DataSource
 from app.models.user import User
 from app.services.llm_service import LLMService
@@ -28,8 +27,8 @@ def normalize(text):
     return ' '.join(text.split())
 
 
-def scope_key(kb_ids=(), source_ids=()):
-    value = [sorted(set(kb_ids)), sorted(set(source_ids))]
+def scope_key(source_ids=()):
+    value = sorted(set(source_ids))
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
 
 
@@ -38,18 +37,17 @@ async def config(db, user_id):
     return (cfg.is_enabled, json.loads(cfg.config_value or '{}').get('threshold', 3)) if cfg else (True, 3)
 
 
-async def valid_scope(db, user_id, kb_ids, source_ids):
+async def valid_scope(db, user_id, source_ids):
     if not await db.get(User, user_id):
         return False
-    for model, ids in ((KnowledgeBase, kb_ids), (DataSource, source_ids)):
-        if ids:
-            found = set((await db.scalars(select(model.id).where(model.user_id == user_id, model.id.in_(ids)))).all())
-            if found != set(ids):
-                return False
+    if source_ids:
+        found = set((await db.scalars(select(DataSource.id).where(DataSource.user_id == user_id, DataSource.id.in_(source_ids)))).all())
+        if found != set(source_ids):
+            return False
     return True
 
 
-async def enqueue(db, message, kb_ids, source_ids):
+async def enqueue(db, message, source_ids):
     """Caller commits the message and queue record in the same transaction."""
     if not (await config(db, message.user_id))[0]:
         return
@@ -57,7 +55,7 @@ async def enqueue(db, message, kb_ids, source_ids):
     if await db.get(QuestionRecord, message.id):
         return
     db.add(QuestionRecord(message_id=message.id, user_id=message.user_id,
-        scope_key=scope_key(kb_ids, source_ids), kb_ids=sorted(set(kb_ids)), source_ids=sorted(set(source_ids)),
+        scope_key=scope_key(source_ids), source_ids=sorted(set(source_ids)),
         normalized_text=normalize(message.content)))
 
 
@@ -66,16 +64,16 @@ async def skip_unfinished(db, user_id):
         QuestionRecord.status.in_(['pending', 'processing'])).values(status='skipped', error_code='disabled'))
 
 
-async def list_questions(db, user_id, kb_ids, source_ids):
+async def list_questions(db, user_id, source_ids):
     enabled, threshold = await config(db, user_id)
-    if not enabled or not await valid_scope(db, user_id, kb_ids, source_ids):
+    if not enabled or not await valid_scope(db, user_id, source_ids):
         return []
     count, latest = func.count(QuestionRecord.message_id), func.max(Message.created_at)
     rows = (await db.execute(select(QuestionGroup.id, QuestionGroup.representative_question, count, latest)
         .join(QuestionRecord, QuestionRecord.group_id == QuestionGroup.id)
         .join(Message, Message.id == QuestionRecord.message_id)
         .where(QuestionGroup.user_id == user_id, QuestionRecord.user_id == user_id, Message.user_id == user_id,
-               QuestionGroup.scope_key == scope_key(kb_ids, source_ids), QuestionRecord.scope_key == scope_key(kb_ids, source_ids),
+               QuestionGroup.scope_key == scope_key(source_ids), QuestionRecord.scope_key == scope_key(source_ids),
                QuestionRecord.status == 'completed')
         .group_by(QuestionGroup.id, QuestionGroup.representative_question)
         .having(count >= threshold).order_by(count.desc(), latest.desc(), QuestionGroup.id).limit(MAX_QUESTIONS))).all()

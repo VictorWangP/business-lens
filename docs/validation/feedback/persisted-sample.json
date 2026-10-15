@@ -1,9 +1,0 @@
-{
-  "sample_origin": "当前本地数据库中已完成并持久化的真实 SQL 回答，复制至隔离验收数据库",
-  "question": "03-按月份汇总销售收入和毛利，用折线图展示 2024 年至 2026 年 10 月 9 日的变化",
-  "feedback_id": "154e7a61-e792-4ed5-822b-9287ab8b30a7",
-  "query_count": 2,
-  "answer_sha256": "9867a8cdc4838ed8ff8f6f9105d3e46add6388ac3ce894debad0eacefa05fe8f",
-  "answer_and_query_evidence_match": true,
-  "external_model_calls": 0
-}

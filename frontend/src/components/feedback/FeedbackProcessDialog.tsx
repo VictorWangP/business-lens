@@ -7,8 +7,7 @@ import {Button} from '../ui/button';
 import {Label} from '../ui/label';
 import {Textarea} from '../ui/textarea';
 import {MarkdownContent} from '../chat/MarkdownContent';
-import {ChartViewer} from '../chat/ChartViewer';
-import {MetricCards} from '../chat/MetricCards';
+import {BusinessAnswerContent} from '../chat/BusinessAnswerPart';
 import {DiscardDialog,FeedbackSelect} from './FeedbackShared';
 
 export function FeedbackProcessDialog({id,onClose,onSaved,onForbidden}:{id:string;onClose:()=>void;onSaved:()=>void;onForbidden:()=>void}) {
@@ -72,16 +71,17 @@ export function FeedbackProcessDialog({id,onClose,onSaved,onForbidden}:{id:strin
           <section><h3 className="mb-2 text-sm font-semibold text-muted-foreground">用户提问</h3><p className="rounded-xl bg-muted p-4 whitespace-pre-wrap break-words">{detail.question}</p></section>
           <section><h3 className="mb-2 text-sm font-semibold text-muted-foreground">AI 回复</h3><div className="rounded-xl border border-amber-300/70 bg-amber-50/50 dark:bg-amber-950/20 p-4 overflow-x-auto">
             <MarkdownContent text={evidence.answer.content}/>
-            {!!evidence.answer.metrics?.length && <MetricCards metrics={evidence.answer.metrics}/>}
-            {evidence.answer.chart && <ChartViewer chart={evidence.answer.chart}/>}
+            <BusinessAnswerContent presentation={evidence.presentation}/>
           </div></section>
           <section className="text-sm space-y-2"><h3 className="font-semibold text-muted-foreground">用户反馈</h3><p>{reasonLabels[detail.reason]} · {detail.user.name} · {feedbackTime(detail.created_at)}</p><p className="whitespace-pre-wrap break-words">{detail.user_comment || '未填写补充说明'}</p>{detail.original_deleted && <p className="text-muted-foreground">原记录已删除，当前展示提交时的快照。</p>}</section>
           <details className="text-sm"><summary className="cursor-pointer font-medium">来源与上下文</summary><div className="mt-3 space-y-3">
             <p>模型：{evidence.execution.model || '无记录'} · 空间：{evidence.resource.workspace_name || '无记录'} · 资源版本：{evidence.resource.scope_version}</p>
             <p className="text-xs text-muted-foreground">以下内容为反馈时保存的证据，不会重新查询数据。</p>
-            {evidence.context.history.length ? <details><summary className="cursor-pointer">关联上下文</summary>{evidence.context.history.map((entry,index)=><div key={index} className="mt-2 rounded-lg bg-muted p-3"><p className="text-xs text-muted-foreground">{entry.role==='user' ? '用户' : '助手'}</p><MarkdownContent text={entry.content}/></div>)}</details> : <p>上下文：无记录</p>}
-            {evidence.answer.citations?.length ? evidence.answer.citations.map((citation,index)=><details key={index}><summary className="cursor-pointer">引用 [{citation.id}] · {citation.doc_name}</summary><p className="text-xs text-muted-foreground">版本 {citation.version || '无记录'} · 切片 {citation.chunk_index}</p><p className="whitespace-pre-wrap break-words mt-2">{citation.content}</p>{citation.retrieval_warning && <p>{citation.retrieval_warning}</p>}</details>) : <p>知识引用：无记录</p>}
-            {evidence.execution.queries?.length ? evidence.execution.queries.map((query,index)=><details key={index}><summary className="cursor-pointer">查询 {query.citation_id || query.query_id} · {query.source_name}{query.truncated ? '（已截断）' : ''}</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-xs">{JSON.stringify(query,null,2)}</pre></details>) : <p>查询依据：无记录</p>}
+            {evidence.context.public_history.length ? <details><summary className="cursor-pointer">关联上下文</summary>{evidence.context.public_history.map((entry,index)=><div key={index} className="mt-2 rounded-lg bg-muted p-3"><p className="text-xs text-muted-foreground">{entry.role==='user' ? '用户' : '助手'}</p><MarkdownContent text={entry.content}/></div>)}</details> : <p>上下文：无记录</p>}
+            {evidence.context.truncated && <p className="text-amber-700 dark:text-amber-300">公开对话背景已截取，仅供核查参考。</p>}
+            {!!evidence.context.clarifications?.length && <details><summary className="cursor-pointer">暂停后补充条件</summary>{evidence.context.clarifications.map((entry:any,index:number)=><pre key={index} className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-xs">{JSON.stringify(entry.response,null,2)}</pre>)}</details>}
+            {evidence.presentation.queries.length ? evidence.presentation.queries.map((query:any,index:number)=><details key={index}><summary className="cursor-pointer">查询 {query.citation_id || query.query_id} · {query.source_name || '业务结果'}{query.truncated ? '（已截断）' : ''}</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-xs">{JSON.stringify(query,null,2)}</pre></details>) : <p>查询依据：无记录</p>}
+            {evidence.completeness.warnings.map(warning=><p key={warning} className="text-amber-700 dark:text-amber-300">{warning}</p>)}
           </div></details>
         </div>
         <div className="space-y-5">

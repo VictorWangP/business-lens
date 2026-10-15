@@ -25,7 +25,7 @@ export const ChartViewer: React.FC<{ chart: ChartConfig }> = ({ chart }) => {
   const pieKey = chart.y_keys[0];
   const pieValues = chart.data.map(row => row[pieKey]);
   const canPie = pieValues.length > 0 && pieValues.every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0)
-    && pieValues.reduce((sum, v) => sum + v, 0) > 0;
+    && pieValues.reduce<number>((sum, v) => sum + (typeof v === 'number' ? v : 0), 0) > 0;
   const preferred: ChartType = chart.type === 'line' ? 'line' : chart.type === 'pie' && canPie ? 'pie' : 'bar';
   const [chartType, setChartType] = useState<ChartType>(preferred);
   useEffect(() => { setChartType(preferred); }, [preferred]);

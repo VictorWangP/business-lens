@@ -43,7 +43,7 @@ export const AuthModal: React.FC = () => {
             <Bot className="w-6 h-6" />
           </div>
           <DialogTitle className="text-xl font-bold">
-            {isRegister ? '创建新账号' : '登录商析 BusinessLens'}
+            {isRegister ? '创建新账号' : '登录经管之星 BusinessLens'}
           </DialogTitle>
           <DialogDescription>
             已开启端到端租户多维数据隔离保护

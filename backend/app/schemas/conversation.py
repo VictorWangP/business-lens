@@ -1,6 +1,7 @@
-from pydantic import BaseModel
-from typing import Optional, List, Any
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional, Any
 from datetime import datetime
+from app.agents.answer import BusinessPresentation
 
 class ConversationCreate(BaseModel):
     model_config = {"extra": "forbid"}
@@ -15,25 +16,30 @@ class ConversationUpdate(BaseModel):
     model: Optional[str] = None
     is_pinned: Optional[bool] = None
 
+class MessageMetadata(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    presentation: BusinessPresentation | None = None
+    run_id: str | None = None
+    status: str | None = None
+    last_sequence: int | None = None
+    interrupts: list[dict] = Field(default_factory=list)
+    execution_events: list[dict] = Field(default_factory=list)
+
+
 class MessageOut(BaseModel):
     id: str
     conversation_id: str
     role: str
     content: str
     tool_calls: Optional[Any] = None
-    citations: Optional[Any] = None
-    execution_events: Optional[List[Any]] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {'from_attributes': True}
 
 class ConversationOut(BaseModel):
     id: str
     title: str
     model: str
-    kb_ids: List[str]
-    source_ids: List[str] = []
     workspace_id: Optional[str] = None
     scope_version: int = 0
     is_pinned: bool = False
@@ -41,5 +47,4 @@ class ConversationOut(BaseModel):
     updated_at: datetime
     message_count: Optional[int] = 0
 
-    class Config:
-        from_attributes = True
+    model_config = {'from_attributes': True}

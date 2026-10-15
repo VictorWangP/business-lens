@@ -18,8 +18,5 @@ class User(Base):
 
     # 关联
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
-    knowledge_bases = relationship("KnowledgeBase", back_populates="user", cascade="all, delete-orphan")
-    documents = relationship("Document", back_populates="user", cascade="all, delete-orphan")
     user_profiles = relationship("UserProfile", back_populates="user", cascade="all, delete-orphan")
-    memory_facts = relationship("MemoryFact", back_populates="user", cascade="all, delete-orphan")
     configs = relationship("AppConfig", back_populates="user", cascade="all, delete-orphan")

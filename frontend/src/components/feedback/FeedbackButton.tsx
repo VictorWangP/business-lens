@@ -17,10 +17,9 @@ export function FeedbackButton({message}:{message:Message}) {
   const [open,setOpen]=useState(false),[discard,setDiscard]=useState(false),[busy,setBusy]=useState(false);
   const [reason,setReason]=useState<FeedbackReason>('data_error'),[comment,setComment]=useState(''),[error,setError]=useState('');
   const record=feedback?.records[message.id];
-  const status=message.tool_calls?.status;
+  const eligibility=feedback?.items[message.id];
   if (!feedback || message.role!=='assistant' || !message.content.trim() ||
-      (message.tool_calls?.run_id && !['completed','partial'].includes(status || '')) ||
-      (status && !['completed','partial'].includes(status))) return null;
+      (!eligibility && !feedback.error) || (eligibility && !eligibility.eligible && !record)) return null;
   const dirty=reason!=='data_error' || comment!=='';
   const close=()=>{if(busy)return;if(dirty)setDiscard(true);else setOpen(false);};
   const reset=()=>{setOpen(false);setDiscard(false);setReason('data_error');setComment('');setError('');};
@@ -32,9 +31,22 @@ export function FeedbackButton({message}:{message:Message}) {
       feedback.remember(result);reset();toast.success(result.deduplicated ? '此回复已提交反馈' : '反馈已提交');
     } catch(error){setError(errorMessage(error));} finally {setBusy(false);}
   };
+  const label = record ? `已反馈 · ${statusLabels[record.status]}` : feedback.error ? '反馈状态加载失败 · 重试' : '反馈错误';
+  const title = feedback.error || (record ? `已反馈 · ${statusLabels[record.status]}` : '反馈');
+
   return <>
-    <Button variant="ghost" size="sm" disabled={!!record || (!feedback.ready && !feedback.error)} onClick={()=>{if(feedback.error){feedback.refresh();return;}setOpen(true);}} title={feedback.error || undefined}>
-      <Flag className="h-3.5 w-3.5" />{record ? `已反馈 · ${statusLabels[record.status]}` : feedback.error ? '反馈状态加载失败 · 重试' : '反馈错误'}
+    <Button
+      variant="ghost"
+      size="icon"
+      disabled={!!record || (!feedback.ready && !feedback.error)}
+      onClick={() => { if (feedback.error) { feedback.refresh(); return; } setOpen(true); }}
+      title={title}
+      aria-label={label}
+      className={`h-7 w-7 p-0 rounded-md transition flex items-center justify-center ${
+        record ? 'text-amber-500' : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+      }`}
+    >
+      <Flag className="h-3.5 w-3.5" />
     </Button>
     <Dialog open={open} onOpenChange={value=>{if(!value)close();}}><DialogContent className="w-[90vw] max-w-2xl max-h-[85dvh] flex flex-col" onPointerDownOutside={event=>event.preventDefault()}>
       <DialogHeader><DialogTitle>反馈错误</DialogTitle><DialogDescription>将提交本次问题、回复及相关来源快照给反馈处理人员。请勿填写密码或凭证。</DialogDescription></DialogHeader>

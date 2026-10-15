@@ -52,21 +52,3 @@ export async function apiRequest<T = any>(
   if (response.status === 204) return undefined as T;
   return response.json();
 }
-
-export async function downloadDocument(docId: string, filename: string) {
-  const response = await fetch(`${API_BASE}/knowledge/documents/${encodeURIComponent(docId)}/download`, {
-    headers: getToken() ? {Authorization: `Bearer ${getToken()}`} : {},
-  });
-  if (!response.ok) {
-    if (response.status === 401) {
-      removeToken();
-      window.dispatchEvent(new Event('auth:unauthorized'));
-    }
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || '原件下载失败');
-  }
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement('a');
-  link.href = url; link.download = filename; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
