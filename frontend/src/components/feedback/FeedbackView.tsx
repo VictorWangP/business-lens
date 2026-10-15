@@ -1,7 +1,7 @@
 import React, {useEffect,useState} from 'react';
 import {CircleAlert,Search,UserRound,ChevronLeft,ChevronRight} from 'lucide-react';
 import {apiRequest} from '../../services/api';
-import {FeedbackPage,statusLabels,feedbackTime,errorMessage,errorStatus} from '../../types/feedback';
+import {FeedbackPage,statusLabels,feedbackTime,errorMessage} from '../../types/feedback';
 import {Button} from '../ui/button';
 import {Input} from '../ui/input';
 import {Card} from '../ui/card';
@@ -10,7 +10,7 @@ import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow} from '../ui/ta
 import {FeedbackBadge,FeedbackSelect} from './FeedbackShared';
 import {FeedbackProcessDialog} from './FeedbackProcessDialog';
 
-export function FeedbackView({onForbidden}:{onForbidden:()=>void}) {
+export function FeedbackView() {
   const [question,setQuestion]=useState(''),[user,setUser]=useState(''),[status,setStatus]=useState('all');
   const [filter,setFilter]=useState({question:'',user:'',status:'all'}),[page,setPage]=useState(1),[pageSize,setPageSize]=useState(10),[reload,setReload]=useState(0);
   const [data,setData]=useState<FeedbackPage|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[selected,setSelected]=useState<string|null>(null);
@@ -24,7 +24,7 @@ export function FeedbackView({onForbidden}:{onForbidden:()=>void}) {
       if(controller.signal.aborted)return;
       const last=Math.max(1,Math.ceil(value.total/pageSize));
       if(page>last){setPage(last);return;}setData(value);
-    }).catch(error=>{if(controller.signal.aborted)return;if([401,403].includes(errorStatus(error)||0)){setData(null);setSelected(null);onForbidden();return;}setError(errorMessage(error));}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+    }).catch(error=>{if(controller.signal.aborted)return;setError(errorMessage(error));}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
   },[filter,page,pageSize,reload]);
   const clear=()=>{setQuestion('');setUser('');setStatus('all');setFilter({question:'',user:'',status:'all'});setPage(1);};
@@ -47,5 +47,5 @@ export function FeedbackView({onForbidden}:{onForbidden:()=>void}) {
       </Table></div>}
       <div className="mt-4 flex flex-wrap justify-end items-center gap-3 text-sm text-muted-foreground"><span>共 {data?.total ?? 0} 条，每页</span><div className="w-20"><FeedbackSelect label="每页条数" value={String(pageSize)} options={{10:'10',20:'20',50:'50'}} onChange={value=>{setPageSize(Number(value));setPage(1);}} disabled={loading}/></div><span>条</span><Button variant="outline" size="icon" aria-label="上一页" onClick={()=>setPage(value=>value-1)} disabled={loading || page<=1}><ChevronLeft/></Button><span aria-label="当前页">{page} / {Math.max(1,Math.ceil((data?.total || 0)/pageSize))}</span><Button variant="outline" size="icon" aria-label="下一页" onClick={()=>setPage(value=>value+1)} disabled={loading || !data || page*pageSize>=data.total}><ChevronRight/></Button></div>
     </div>
-  </Card>{selected && <FeedbackProcessDialog key={selected} id={selected} onClose={()=>setSelected(null)} onSaved={()=>{setSelected(null);setReload(value=>value+1);}} onForbidden={()=>{setData(null);setSelected(null);onForbidden();}}/>}</div>;
+  </Card>{selected && <FeedbackProcessDialog key={selected} id={selected} onClose={()=>setSelected(null)} onSaved={()=>{setSelected(null);setReload(value=>value+1);}}/>}</div>;
 }

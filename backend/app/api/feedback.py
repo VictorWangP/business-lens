@@ -5,7 +5,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.feedback import AnswerFeedback
 from app.schemas.feedback import FeedbackCreate, FeedbackUpdate, FeedbackStatus
-from app.security.auth import get_current_user, get_feedback_admin
+from app.security.auth import get_current_user
 from app.services import feedback_service as service
 
 router = APIRouter(tags=['反馈管理'])
@@ -27,7 +27,7 @@ async def feedback_context(session_id: str, user: User = Depends(get_current_use
 @router.get('/feedback')
 async def listing(question: str = Query('', max_length=200), user: str = Query('', max_length=100),
                   status: FeedbackStatus | None = None, page: int = Query(1, ge=1), page_size: int = 10,
-                  admin: User = Depends(get_feedback_admin), db: AsyncSession = Depends(get_db)):
+                  current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if page_size not in {10, 20, 50}:
         raise HTTPException(422, '每页条数只能为 10、20、50')
     conditions = []
@@ -44,11 +44,11 @@ async def listing(question: str = Query('', max_length=200), user: str = Query('
 
 
 @router.get('/feedback/{feedback_id}')
-async def get_detail(feedback_id: str, admin: User = Depends(get_feedback_admin), db: AsyncSession = Depends(get_db)):
+async def get_detail(feedback_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     return await service.detail(db, await service.get_record(db, feedback_id))
 
 
 @router.patch('/feedback/{feedback_id}')
 async def process(feedback_id: str, payload: FeedbackUpdate,
-                  admin: User = Depends(get_feedback_admin), db: AsyncSession = Depends(get_db)):
-    return await service.update_feedback(db, admin, await service.get_record(db, feedback_id), payload)
+                  user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await service.update_feedback(db, user, await service.get_record(db, feedback_id), payload)

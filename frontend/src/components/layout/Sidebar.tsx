@@ -48,7 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({currentTab, onTabChange}) => {
             <CollapsibleContent><SidebarMenuSub><SidebarMenuSubItem><SidebarMenuSubButton asChild className={`w-full ${activeMenuClass}`} isActive={currentTab === 'config'}><button type="button" onClick={() => navigate('config')} aria-current={currentTab === 'config' ? 'page' : undefined}><Sliders /><span>应用配置</span></button></SidebarMenuSubButton></SidebarMenuSubItem></SidebarMenuSub></CollapsibleContent>
           </SidebarMenuItem>
         </Collapsible>
-        {user?.role === 'feedback_admin' && <Collapsible asChild open={feedbackOpen} onOpenChange={setFeedbackOpen}>
+        {user && <Collapsible asChild open={feedbackOpen} onOpenChange={setFeedbackOpen}>
           <SidebarMenuItem>
             <CollapsibleTrigger asChild><SidebarMenuButton className="group" aria-label="反馈管理"><Flag /><span>反馈管理</span><ChevronRight className="ml-auto transition-transform group-data-[state=open]:rotate-90" /></SidebarMenuButton></CollapsibleTrigger>
             <CollapsibleContent><SidebarMenuSub><SidebarMenuSubItem><SidebarMenuSubButton asChild className={`w-full ${activeMenuClass}`} isActive={currentTab === 'feedback'}><button type="button" onClick={() => navigate('feedback')} aria-current={currentTab === 'feedback' ? 'page' : undefined}><CheckSquare /><span>回复校对</span></button></SidebarMenuSubButton></SidebarMenuSubItem></SidebarMenuSub></CollapsibleContent>
